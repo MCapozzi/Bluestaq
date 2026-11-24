@@ -50,7 +50,7 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                 nullable: false,
                 defaultValue: 0);
 
-            migrationBuilder.Sql("UPDATE users SET DigestFrequency = 1 WHERE DigestSharedNotes = 1 OR DigestPublicNotes = 1;");
+            migrationBuilder.Sql("UPDATE users SET DigestFrequency = 1 WHERE DigestSharedNotes = 1;");
 
             migrationBuilder.DropColumn(
                 name: "DigestPublicNotes",
