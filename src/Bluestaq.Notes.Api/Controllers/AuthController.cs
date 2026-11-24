@@ -96,6 +96,12 @@ public sealed class AuthController(
             user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
         }
 
+        if (User.Identity?.IsAuthenticated == true)
+        {
+            // The request may carry another user's session; it ends too.
+            await sessions.RevokeAsync(User.GetSessionId(), ct);
+        }
+
         var (session, token) = await sessions.CreateAsync(user, ct);
         if (user.Role == UserRole.Administrator)
         {

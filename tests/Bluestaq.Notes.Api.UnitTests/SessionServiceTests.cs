@@ -38,16 +38,20 @@ public sealed class SessionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Create_purges_the_users_expired_sessions()
+    public async Task Create_ends_the_users_earlier_sessions()
     {
         var user = await _db.AddUserAsync();
-        await CreateSessionAsync(user.Id);
-        _db.Clock.Advance(TimeSpan.FromHours(2));
+        var other = await _db.AddUserAsync("bob");
+        var (_, first) = await CreateSessionAsync(user.Id);
+        await CreateSessionAsync(other.Id);
 
-        await CreateSessionAsync(user.Id);
+        var (_, second) = await CreateSessionAsync(user.Id);
 
         await using var ctx = _db.CreateContext();
-        Assert.Equal(1, await ctx.Sessions.CountAsync());
+        var service = new SessionService(ctx, Microsoft.Extensions.Options.Options.Create(Options), _db.Clock);
+        Assert.Null(await service.ValidateAsync(first, default));
+        Assert.NotNull(await service.ValidateAsync(second, default));
+        Assert.Equal(2, await ctx.Sessions.CountAsync());
     }
 
     [Fact]

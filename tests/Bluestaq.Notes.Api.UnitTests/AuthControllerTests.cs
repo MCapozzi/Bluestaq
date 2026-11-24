@@ -136,6 +136,28 @@ public sealed class AuthControllerTests : IAsyncLifetime
         Assert.Contains("samesite=strict", cookie);
     }
 
+    [Fact]
+    public async Task Login_ends_earlier_sessions_and_replaces_any_queued_session_cookie()
+    {
+        var alice = await RegisterAsync("alice");
+        await RegisterAsync("bob");
+        var first = (SessionResponse)((OkObjectResult)await Controller().Login(new LoginRequest("alice", Password), default)).Value!;
+        var aliceSessionId = (await _ctx.Sessions.AsNoTracking().SingleAsync()).Id;
+
+        // Bob logs in from a browser still holding Alice's session, whose sliding refresh was already queued.
+        var controller = Controller(user: TestPrincipals.For(alice.Id, aliceSessionId));
+        controller.HttpContext.Response.Cookies.Append(_options.CookieName, first.Token);
+        var bob = (SessionResponse)((OkObjectResult)await controller.Login(new LoginRequest("bob", Password), default)).Value!;
+
+        Assert.Equal($"{_options.CookieName}={bob.Token}", Assert.Single(controller.HttpContext.Response.Headers.SetCookie)!.Split(';')[0]);
+        Assert.Equal(bob.User.Id, (await _ctx.Sessions.AsNoTracking().SingleAsync()).UserId);
+
+        var again = (SessionResponse)((OkObjectResult)await Controller().Login(new LoginRequest("bob", Password), default)).Value!;
+        var sessions = new SessionService(_db.CreateContext(), Options.Create(_options), _db.Clock);
+        Assert.Null(await sessions.ValidateAsync(bob.Token, default));
+        Assert.NotNull(await sessions.ValidateAsync(again.Token, default));
+    }
+
     [Theory]
     [InlineData("alice", "wrong-password")]
     [InlineData("nobody", Password)]

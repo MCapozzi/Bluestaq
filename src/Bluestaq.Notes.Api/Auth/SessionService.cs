@@ -16,7 +16,8 @@ public sealed class SessionService(NotesDbContext db, IOptions<SessionAuthOption
         var now = clock.GetUtcNow().UtcDateTime;
         var token = Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
 
-        await db.Sessions.Where(s => s.UserId == user.Id && s.ExpiresAt <= now).ExecuteDeleteAsync(ct);
+        // One session per user: a new login ends every earlier session.
+        await db.Sessions.Where(s => s.UserId == user.Id).ExecuteDeleteAsync(ct);
 
         var session = new Session
         {

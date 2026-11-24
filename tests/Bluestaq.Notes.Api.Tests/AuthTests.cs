@@ -122,6 +122,19 @@ public sealed class AuthTests(NotesApiFactory factory)
     }
 
     [Fact]
+    public async Task Logging_in_again_ends_the_earlier_session()
+    {
+        var (first, session) = await ApiClient.CreateAuthenticatedClientAsync(factory);
+
+        var login = await factory.CreateClient().PostAsJsonAsync("/api/auth/login", new LoginRequest(session.User.Username, ApiClient.DefaultPassword));
+        var second = (await login.Content.ReadFromJsonAsync<SessionResponse>())!;
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await first.GetAsync("/api/auth/me")).StatusCode);
+        first.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", second.Token);
+        Assert.Equal(HttpStatusCode.OK, (await first.GetAsync("/api/auth/me")).StatusCode);
+    }
+
+    [Fact]
     public async Task Register_ends_the_callers_session()
     {
         var (client, _) = await ApiClient.CreateAuthenticatedClientAsync(factory);

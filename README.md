@@ -103,7 +103,7 @@ All endpoints except `register`, `login` and `/health` require a valid session. 
 | Method | Path | Description | Success |
 | --- | --- | --- | --- |
 | POST | `/api/auth/register` | Create a user `{ username, password }`; ends the caller's current session, if any | 201 (409 taken, 503 database error) |
-| POST | `/api/auth/login` | Start a session `{ username, password }` → `{ token, expiresAt, user }` + session cookie | 200 |
+| POST | `/api/auth/login` | Start a session `{ username, password }` → `{ token, expiresAt, user }` + session cookie; ends the user's earlier sessions (one session per user) | 200 |
 | POST | `/api/auth/logout` | Revoke the current session | 204 |
 | GET | `/api/auth/me` | Current user | 200 |
 | GET | `/api/notes?page=1&pageSize=20` | List own notes, newest first (`pageSize` ≤ 100) | 200 |
