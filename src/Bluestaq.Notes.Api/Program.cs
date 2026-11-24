@@ -1,3 +1,4 @@
+using Bluestaq.Notes.Api.Admin;
 using Bluestaq.Notes.Api.Auth;
 using Bluestaq.Notes.Api.Data;
 using Bluestaq.Notes.Api.Domain;
@@ -29,6 +30,9 @@ builder.Services.AddScoped<NoteExporter>();
 builder.Services.Configure<SessionAuthOptions>(builder.Configuration.GetSection(SessionAuthOptions.SectionName));
 builder.Services.AddScoped<SessionService>();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.Configure<AdminAuditOptions>(builder.Configuration.GetSection(AdminAuditOptions.SectionName));
+builder.Services.AddSingleton<AdminAuditFileLog>();
+builder.Services.AddSingleton<IAdminAuditLog, AdminAuditLog>();
 
 builder.Services
     .AddAuthentication(SessionAuthenticationDefaults.Scheme)
@@ -36,7 +40,8 @@ builder.Services
 
 // Every endpoint requires a valid session unless explicitly marked [AllowAnonymous].
 builder.Services.AddAuthorizationBuilder()
-    .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+    .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
+    .AddPolicy(Roles.AdministratorPolicy, policy => policy.RequireRole(Roles.Administrator));
 
 var authRateLimit = builder.Configuration.GetSection(AuthRateLimitOptions.SectionName).Get<AuthRateLimitOptions>()
     ?? new AuthRateLimitOptions();
@@ -65,6 +70,21 @@ if (app.Configuration.GetValue("Database:MigrateOnStartup", false))
     await scope.ServiceProvider.GetRequiredService<NotesDbContext>().Database.MigrateAsync();
 }
 
+{
+    using var scope = app.Services.CreateScope();
+    var bootstrap = app.Configuration.GetSection(AdminBootstrapOptions.SectionName).Get<AdminBootstrapOptions>() ?? new();
+    var admin = await AdminBootstrapper.EnsureAsync(
+        scope.ServiceProvider.GetRequiredService<NotesDbContext>(),
+        scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>(),
+        bootstrap,
+        TimeProvider.System,
+        CancellationToken.None);
+    if (admin is not null)
+    {
+        app.Logger.LogInformation("Bootstrap administrator account: {Username}", admin.Username);
+    }
+}
+
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
@@ -75,6 +95,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseRateLimiter();
 app.UseAuthentication();
+app.UseMiddleware<AdminAuditMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();

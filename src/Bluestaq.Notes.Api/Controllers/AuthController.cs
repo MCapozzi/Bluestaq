@@ -76,6 +76,10 @@ public sealed class AuthController(
         }
 
         var (session, token) = await sessions.CreateAsync(user, ct);
+        if (user.Role == UserRole.Administrator)
+        {
+            HttpContext.Items[Admin.AdminAuditMiddleware.ActorItemKey] = (user.Id, user.Username);
+        }
 
         SessionCookie.Append(HttpContext, sessionOptions.Value, token, session.ExpiresAt);
 
@@ -102,5 +106,5 @@ public sealed class AuthController(
 
     private static string NormalizeUsername(string username) => username.Trim().ToLowerInvariant();
 
-    private static UserResponse ToResponse(User user) => new(user.Id, user.Username, user.CreatedAt);
+    private static UserResponse ToResponse(User user) => new(user.Id, user.Username, user.CreatedAt, user.Role);
 }

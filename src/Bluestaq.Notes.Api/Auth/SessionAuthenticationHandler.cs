@@ -43,6 +43,7 @@ public sealed class SessionAuthenticationHandler(
             new(ClaimTypes.NameIdentifier, session.UserId.ToString()),
             new(ClaimTypes.Name, user.Username),
             new(SessionAuthenticationDefaults.SessionIdClaim, session.Id.ToString()),
+            new(ClaimTypes.Role, user.Role.ToString()),
         ];
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, Scheme.Name));
         return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));

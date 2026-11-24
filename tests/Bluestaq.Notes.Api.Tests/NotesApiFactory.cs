@@ -10,6 +10,10 @@ namespace Bluestaq.Notes.Api.Tests;
 public sealed class NotesApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     public const int RateLimitPermits = 100_000;
+    public const string AdminUsername = "rootadmin";
+    public const string AdminPassword = "admin-test-password";
+
+    public string AdminAuditDirectory { get; } = Path.Combine(Path.GetTempPath(), $"bluestaq-admin-audit-{Guid.NewGuid():N}");
 
     private readonly MySqlContainer _mysql = new MySqlBuilder(Environment.GetEnvironmentVariable("NOTES_TEST_MYSQL_IMAGE") ?? "mysql:8.4").Build();
 
@@ -19,6 +23,9 @@ public sealed class NotesApiFactory : WebApplicationFactory<Program>, IAsyncLife
         builder.UseSetting("ConnectionStrings:Notes", _mysql.GetConnectionString());
         builder.UseSetting("Database:MigrateOnStartup", "true");
         builder.UseSetting("RateLimiting:Auth:PermitLimit", RateLimitPermits.ToString());
+        builder.UseSetting("Admin:BootstrapUsername", AdminUsername);
+        builder.UseSetting("Admin:BootstrapPassword", AdminPassword);
+        builder.UseSetting("AdminAudit:LogFilePath", Path.Combine(AdminAuditDirectory, "admin-audit-.log"));
     }
 
     public NotesDbContext CreateDbContext() =>

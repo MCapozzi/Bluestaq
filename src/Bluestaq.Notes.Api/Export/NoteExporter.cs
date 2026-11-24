@@ -10,14 +10,15 @@ namespace Bluestaq.Notes.Api.Export;
 public sealed class NoteExporter(NotesDbContext db, TimeProvider clock, IOptions<ExportOptions> options)
 {
     /// <remarks>
-    /// Only notes readable by the requester (own, public, or shared with them) are ever returned. Requested IDs that
+    /// Only notes readable by the requester (own, public, or shared with them; all notes for administrators) are returned. Requested IDs that
     /// don't exist or aren't readable are reported together in <see cref="NoteExportResponse.NotFoundIds"/>.
     /// Throws <see cref="ExportLimitExceededException"/> rather than buffering more than
     /// <see cref="ExportOptions.MaxNotes"/> notes.
     /// </remarks>
-    public async Task<NoteExportResponse> ExportAsync(long requesterId, NoteExportRequest request, CancellationToken ct)
+    public async Task<NoteExportResponse> ExportAsync(
+        long requesterId, NoteExportRequest request, CancellationToken ct, bool isAdministrator = false)
     {
-        var query = db.Notes.AsNoTracking().ReadableBy(requesterId);
+        var query = db.Notes.AsNoTracking().VisibleTo(requesterId, isAdministrator);
         long[] requestedIds = [];
 
         if (request.NoteIds is not null)

@@ -64,13 +64,16 @@ internal sealed class TestDb : IDisposable
 
 internal static class TestPrincipals
 {
-    public static ClaimsPrincipal For(long userId, long sessionId = 1, string username = "user") =>
+    public static ClaimsPrincipal For(long userId, long sessionId = 1, string username = "user", bool admin = false) =>
         new(new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
             new Claim(ClaimTypes.Name, username),
             new Claim(SessionAuthenticationDefaults.SessionIdClaim, sessionId.ToString()),
+            new Claim(ClaimTypes.Role, admin ? Roles.Administrator : nameof(UserRole.User)),
         ], "Test"));
+
+    public static ClaimsPrincipal Admin(long userId, string username = "admin") => For(userId, username: username, admin: true);
 
     /// <summary>A controller context whose request services can build ProblemDetails like the real pipeline.</summary>
     public static ControllerContext ControllerContext(ClaimsPrincipal user) => new()

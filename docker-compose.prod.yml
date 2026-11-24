@@ -40,10 +40,17 @@ services:
       # Enable only behind a trusted reverse proxy / load balancer that sets X-Forwarded-For/-Proto
       # (needed for correct per-client rate limiting and Secure cookies when TLS terminates at the proxy).
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: ${FORWARDED_HEADERS_ENABLED:-false}
+      # Created (or promoted) as an Administrator at startup. Leave the password empty once the account exists.
+      Admin__BootstrapUsername: ${ADMIN_BOOTSTRAP_USERNAME:-}
+      Admin__BootstrapPassword: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      AdminAudit__LogFilePath: /var/log/bluestaq/admin-audit-.log
     ports:
       - "${API_BIND_ADDRESS:-0.0.0.0}:${API_PORT:-8080}:8080"
     networks:
       - backend
+    volumes:
+      # External admin action log (JSON lines, rolled daily); ship it to your log store from this volume.
+      - admin-audit-logs:/var/log/bluestaq
     read_only: true
     tmpfs:
       - /tmp
@@ -55,3 +62,4 @@ networks:
 
 volumes:
   mysql-data:
+  admin-audit-logs:

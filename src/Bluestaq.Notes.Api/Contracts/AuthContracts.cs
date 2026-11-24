@@ -1,3 +1,4 @@
+using Bluestaq.Notes.Api.Domain;
 using System.ComponentModel.DataAnnotations;
 using static Bluestaq.Notes.Api.Contracts.ValidationLimits;
 
@@ -13,6 +14,6 @@ public sealed record LoginRequest(
     [Required] string Username,
     [Required] string Password);
 
-public sealed record UserResponse(long Id, string Username, DateTime CreatedAt);
+public sealed record UserResponse(long Id, string Username, DateTime CreatedAt, UserRole Role = UserRole.User);
 
 public sealed record SessionResponse(string Token, DateTime ExpiresAt, UserResponse User);

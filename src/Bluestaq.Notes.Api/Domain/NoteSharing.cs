@@ -24,6 +24,10 @@ public sealed class NoteShare
 
 public static class NoteAccess
 {
+    /// <summary>Administrators can read every note; everyone else gets <see cref="ReadableBy"/>.</summary>
+    public static IQueryable<Note> VisibleTo(this IQueryable<Note> notes, long userId, bool isAdministrator) =>
+        isAdministrator ? notes : notes.ReadableBy(userId);
+
     /// <summary>Notes the user may read: their own, public notes, and notes shared with them.</summary>
     public static IQueryable<Note> ReadableBy(this IQueryable<Note> notes, long userId) =>
         notes.Where(n => n.OwnerId == userId

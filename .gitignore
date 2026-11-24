@@ -484,3 +484,6 @@ $RECYCLE.BIN/
 # Coverage output
 coverage*.xml
 TestResults/
+
+# Admin audit log files
+logs/

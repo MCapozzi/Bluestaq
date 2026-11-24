@@ -6,6 +6,7 @@ public sealed class User
     public required string Username { get; set; }
     public required string PasswordHash { get; set; }
     public DateTime CreatedAt { get; set; }
+    public UserRole Role { get; set; } = UserRole.User;
 
     public List<Note> Notes { get; } = [];
     public List<Session> Sessions { get; } = [];

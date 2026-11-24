@@ -25,8 +25,13 @@ services:
     environment:
       ConnectionStrings__Notes: "Server=mysql;Port=3306;Database=notes;User=notes;Password=notespw;"
       Database__MigrateOnStartup: "true"
+      Admin__BootstrapUsername: "admin"
+      Admin__BootstrapPassword: "admin-dev-password"
     ports:
       - "127.0.0.1:8080:8080"
+    volumes:
+      - admin-audit-logs:/var/log/bluestaq
 
 volumes:
   mysql-data:
+  admin-audit-logs:

@@ -10,6 +10,7 @@ public sealed class NotesDbContext(DbContextOptions<NotesDbContext> options) : D
     public DbSet<Note> Notes => Set<Note>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<NoteShare> NoteShares => Set<NoteShare>();
+    public DbSet<AdminAuditEntry> AdminAuditLog => Set<AdminAuditEntry>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -25,6 +26,20 @@ public sealed class NotesDbContext(DbContextOptions<NotesDbContext> options) : D
             e.Property(u => u.Username).HasMaxLength(Contracts.ValidationLimits.UsernameMaxLength).IsRequired();
             e.Property(u => u.PasswordHash).HasMaxLength(255).IsRequired();
             e.HasIndex(u => u.Username).IsUnique();
+        });
+
+        modelBuilder.Entity<AdminAuditEntry>(e =>
+        {
+            e.ToTable("admin_audit_log");
+            e.Property(a => a.AdminUsername).HasMaxLength(Contracts.ValidationLimits.UsernameMaxLength).IsRequired();
+            e.Property(a => a.Action).HasMaxLength(100).IsRequired();
+            e.Property(a => a.HttpMethod).HasMaxLength(10).IsRequired();
+            e.Property(a => a.Path).HasMaxLength(500).IsRequired();
+            e.Property(a => a.QueryString).HasMaxLength(1000);
+            e.Property(a => a.ClientIp).HasMaxLength(45);
+            e.Property(a => a.TraceId).HasMaxLength(100);
+            e.HasIndex(a => new { a.AdminUserId, a.OccurredAt });
+            e.HasIndex(a => a.TargetNoteId);
         });
 
         modelBuilder.Entity<Note>(e =>

@@ -64,7 +64,7 @@ public sealed class NotesController(NotesDbContext db, NoteExporter exporter) : 
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(long id, CancellationToken ct)
     {
-        var note = await db.Notes.AsNoTracking().ReadableBy(User.GetUserId()).SingleOrDefaultAsync(n => n.Id == id, ct);
+        var note = await db.Notes.AsNoTracking().VisibleTo(User.GetUserId(), User.IsAdministrator()).SingleOrDefaultAsync(n => n.Id == id, ct);
         return note is null ? NotFound() : Ok(NoteResponse.From(note));
     }
 
@@ -115,14 +115,15 @@ public sealed class NotesController(NotesDbContext db, NoteExporter exporter) : 
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(long id, CancellationToken ct)
     {
-        var deleted = await OwnedNotes().Where(n => n.Id == id).ExecuteDeleteAsync(ct);
-        if (deleted > 0)
+        var (note, error) = await NoteAccessGuard.FindOwnedAsync(this, db, id, ct);
+        if (note is null)
         {
-            return NoContent();
+            return error!;
         }
 
-        var (_, error) = await NoteAccessGuard.FindOwnedAsync(this, db, id, ct);
-        return error ?? NotFound();
+        db.Notes.Remove(note);
+        await db.SaveChangesAsync(ct);
+        return NoContent();
     }
 
     /// <summary>
@@ -138,7 +139,7 @@ public sealed class NotesController(NotesDbContext db, NoteExporter exporter) : 
         NoteExportResponse export;
         try
         {
-            export = await exporter.ExportAsync(User.GetUserId(), request, ct);
+            export = await exporter.ExportAsync(User.GetUserId(), request, ct, User.IsAdministrator());
         }
         catch (ExportLimitExceededException ex)
         {

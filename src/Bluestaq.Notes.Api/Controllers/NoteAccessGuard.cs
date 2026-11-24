@@ -10,19 +10,20 @@ internal static class NoteAccessGuard
 {
     /// <summary>
     /// Loads a note (tracked) for an owner-only operation. Returns 404 if the caller can't read it, 403 if they can
-    /// read it but don't own it.
+    /// read it but don't own it. Administrators pass for every note.
     /// </summary>
     public static async Task<(Note? Note, IActionResult? Error)> FindOwnedAsync(
         ControllerBase controller, NotesDbContext db, long id, CancellationToken ct)
     {
         var userId = controller.User.GetUserId();
-        var note = await db.Notes.ReadableBy(userId).SingleOrDefaultAsync(n => n.Id == id, ct);
+        var isAdmin = controller.User.IsAdministrator();
+        var note = await db.Notes.VisibleTo(userId, isAdmin).SingleOrDefaultAsync(n => n.Id == id, ct);
         if (note is null)
         {
             return (null, controller.NotFound());
         }
 
-        if (note.OwnerId != userId)
+        if (note.OwnerId != userId && !isAdmin)
         {
             return (null, controller.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Only the note's owner can do this."));
         }
