@@ -25,6 +25,8 @@ public sealed class AdminAuditFileLog : IDisposable
     {
         // Serilog swallows sink failures; surface them so a broken audit file isn't silent.
         Serilog.Debugging.SelfLog.Enable(Console.Error);
+        // TODO: The retained file count (AdminAudit:RetainedFileCount) and per-file size limit (Serilog's 1 GB default)
+        // may need to be adjusted for production deployments, based on audit volume, disk space and retention requirements.
         _logger = new LoggerConfiguration()
             .WriteTo.File(
                 new CompactJsonFormatter(),
