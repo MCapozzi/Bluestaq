@@ -67,6 +67,8 @@ has ready-made requests for every endpoint.
 | `AdminAudit:RetainedFileCount` | `90` | Number of daily admin audit files kept |
 | `Alerts:PushInterval` | `00:30:00` | Minimum time between alert pushes to the same user |
 | `Alerts:PollInterval` | `00:00:05` | How often connected users are checked for due alerts |
+| `Alerts:SendTimeout` | `00:00:10` | A socket that doesn't accept an alert within this time is dropped |
+| `Alerts:AllowedOrigins` | _(empty)_ | Extra browser origins allowed to open a cookie-authenticated alert socket |
 
 Use environment variables in containers, e.g. `ConnectionStrings__Notes=...`.
 
@@ -124,7 +126,8 @@ edited** (title or content). You are never alerted about your own changes.
 Alerts are stored in `note_alerts` as they happen and pushed **at most once per 30 minutes per user**: if nothing was
 pushed to you in the last 30 minutes, pending alerts go out within a few seconds; otherwise they are combined and sent
 when the 30 minutes are up. Alerts wait in the database while you're offline and are delivered when you connect.
-Alerts for notes you can no longer read are dropped. When your session ends (logout or expiry) the socket is closed
+Alerts for notes you can no longer read are dropped. A cookie-authenticated handshake is rejected with 403 unless its
+`Origin` is the API's own or listed in `Alerts:AllowedOrigins`. When your session ends (logout or expiry) the socket is closed
 with status `1008`.
 
 ```json

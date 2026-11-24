@@ -250,6 +250,32 @@ public sealed class AlertTests : IAsyncLifetime
         dispatcher.Wake();
     }
 
+    [Theory]
+    [InlineData(null, null, true)]
+    [InlineData("https://api.example.com", null, true)]
+    [InlineData("https://API.example.com/", null, true)]
+    [InlineData("https://app.example.com", null, true)]
+    [InlineData("https://evil.example.com", null, false)]
+    [InlineData("not a uri", null, false)]
+    [InlineData("https://evil.example.com", "Bearer token", true)]
+    public void Cookie_authenticated_sockets_must_come_from_an_allowed_origin(string? origin, string? authorization, bool allowed)
+    {
+        var request = new Microsoft.AspNetCore.Http.DefaultHttpContext().Request;
+        request.Host = new Microsoft.AspNetCore.Http.HostString("api.example.com");
+        if (origin is not null)
+        {
+            request.Headers.Origin = origin;
+        }
+
+        if (authorization is not null)
+        {
+            request.Headers.Authorization = authorization;
+        }
+
+        var options = new AlertOptions { AllowedOrigins = ["https://app.example.com/"] };
+        Assert.Equal(allowed, AlertEndpoint.IsOriginAllowed(request, options));
+    }
+
     private sealed class FakeSocket : WebSocket
     {
         public List<byte[]> Sent { get; } = [];
