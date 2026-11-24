@@ -362,6 +362,21 @@ public sealed class DigestTests : IAsyncLifetime
     }
 
     [Fact]
+    public void Schedule_starts_the_day_at_the_first_valid_time_where_clocks_skip_midnight()
+    {
+        var midnight = new DateTime(1, 1, 1, 0, 0, 0);
+        var zone = TimeZoneInfo.CreateCustomTimeZone("Skips-midnight", TimeSpan.FromHours(-3), "Skips midnight", "Std", "Dst",
+        [
+            TimeZoneInfo.AdjustmentRule.CreateAdjustmentRule(new DateTime(2000, 1, 1), new DateTime(2099, 12, 31), TimeSpan.FromHours(1),
+                TimeZoneInfo.TransitionTime.CreateFixedDateRule(midnight, 9, 6), TimeZoneInfo.TransitionTime.CreateFixedDateRule(midnight, 4, 5)),
+        ]);
+        var schedule = new DigestSchedule(zone);
+
+        // 2026-09-06 local clocks jump from 00:00 (-03:00) to 01:00 (-02:00).
+        Assert.Equal(new DateTime(2026, 9, 6, 3, 0, 0, DateTimeKind.Utc), schedule.StartOfDay(new DateTime(2026, 9, 6, 15, 0, 0, DateTimeKind.Utc)));
+    }
+
+    [Fact]
     public async Task Dispatcher_sends_due_digests_and_stays_idle_without_a_mail_server()
     {
         await ShareAsync(_plan.Id, _bob, _alice);

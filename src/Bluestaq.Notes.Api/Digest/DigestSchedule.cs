@@ -19,6 +19,15 @@ public sealed class DigestSchedule(TimeZoneInfo zone)
         return (Midnight(today.AddDays(-1)), Midnight(today));
     }
 
-    private DateTime Midnight(DateTime localDate) =>
-        TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(localDate, DateTimeKind.Unspecified), Zone);
+    /// <summary>Start of the local day; in zones whose clocks skip midnight, the first valid time after it.</summary>
+    private DateTime Midnight(DateTime localDate)
+    {
+        var local = DateTime.SpecifyKind(localDate, DateTimeKind.Unspecified);
+        while (Zone.IsInvalidTime(local))
+        {
+            local = local.AddMinutes(15);
+        }
+
+        return TimeZoneInfo.ConvertTimeToUtc(local, Zone);
+    }
 }
