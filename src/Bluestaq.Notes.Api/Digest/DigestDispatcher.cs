@@ -10,7 +10,8 @@ public sealed class DigestDispatcher(
     TimeProvider clock,
     ILogger<DigestDispatcher> logger) : BackgroundService
 {
-    private readonly DigestSchedule _schedule = new(TimeZoneInfo.FindSystemTimeZoneById(options.Value.TimeZone));
+    // Resolved on first use so a bad time zone can't block startup while digests are disabled.
+    private DigestSchedule? _schedule;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -43,6 +44,7 @@ public sealed class DigestDispatcher(
     public TimeSpan NextDelay()
     {
         var now = clock.GetUtcNow().UtcDateTime;
+        _schedule ??= new DigestSchedule(TimeZoneInfo.FindSystemTimeZoneById(options.Value.TimeZone));
         var untilMidnight = _schedule.NextMidnight(now) - now;
         return untilMidnight < options.Value.PollInterval ? untilMidnight : options.Value.PollInterval;
     }
