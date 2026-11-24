@@ -82,8 +82,8 @@ public sealed class DigestService(
 
     /// <summary>
     /// Within <see cref="DigestOptions.SendWindow"/> after midnight, emails every opted-in user the digest for the day
-    /// that just ended, once. Each user is claimed with a conditional update first, so concurrent instances don't send
-    /// twice; a failed send releases the claim so the next pass retries it. Users with nothing new get no email.
+    /// that just ended, once. Each user is claimed with a conditional update first (also requiring unchanged opt-ins), so
+    /// concurrent instances don't send twice and opt-in changes made meanwhile are picked up by the next pass; a failed send releases the claim so the next pass retries it. Users with nothing new get no email.
     /// </summary>
     /// <returns>The number of emails sent.</returns>
     public async Task<int> SendDueAsync(CancellationToken ct)
@@ -105,7 +105,8 @@ public sealed class DigestService(
         foreach (var user in due)
         {
             var claimed = await db.Users
-                .Where(u => u.Id == user.Id && u.DigestLastSentAt == user.DigestLastSentAt)
+                .Where(u => u.Id == user.Id && u.DigestLastSentAt == user.DigestLastSentAt
+                    && u.DigestSharedNotes == user.DigestSharedNotes && u.DigestPublicNotes == user.DigestPublicNotes)
                 .ExecuteUpdateAsync(s => s.SetProperty(u => u.DigestLastSentAt, until), ct);
             if (claimed == 0)
             {
