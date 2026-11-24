@@ -80,10 +80,13 @@ public static class NoteCsvReader
     public static string Unguard(string value) =>
         value.Length > 1 && value[0] == '\'' && FormulaChars.Contains(value[1]) ? value[1..] : value;
 
-    private static bool TryParseVisibility(string value, out NoteVisibility visibility) =>
-        Enum.TryParse(value.Trim(), ignoreCase: true, out visibility)
-        && !char.IsAsciiDigit(value.Trim()[0])
-        && Enum.IsDefined(visibility);
+    /// <summary>Accepts only a visibility name (any case), not numbers or flag combinations like "Private, Public".</summary>
+    private static bool TryParseVisibility(string value, out NoteVisibility visibility)
+    {
+        var name = Enum.GetNames<NoteVisibility>().FirstOrDefault(n => string.Equals(n, value.Trim(), StringComparison.OrdinalIgnoreCase));
+        visibility = name is null ? default : Enum.Parse<NoteVisibility>(name);
+        return name is not null;
+    }
 
     private static NoteImportException Error(string key, string message) => new(new Dictionary<string, string[]> { [key] = [message] });
 

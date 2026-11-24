@@ -68,6 +68,8 @@ public sealed class NoteCsvReaderTests
     [InlineData("Id,Title,Content\n-1,T,C", "Notes[0].Id")]
     [InlineData("Title,Content,Visibility\nT,C,Secret", "Notes[0].Visibility")]
     [InlineData("Title,Content,Visibility\nT,C,1", "Notes[0].Visibility")]
+    [InlineData("Title,Content,Visibility\nT,C,+1", "Notes[0].Visibility")]
+    [InlineData("Title,Content,Visibility\nT,C,\"Private, Public\"", "Notes[0].Visibility")]
     public void Malformed_csv_is_rejected_with_the_offending_field(string csv, string key) =>
         Assert.Contains(key, ErrorsOf(csv).Keys);
 
