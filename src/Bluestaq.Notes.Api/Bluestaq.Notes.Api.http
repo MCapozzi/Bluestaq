@@ -92,6 +92,50 @@ Authorization: Bearer {{token}}
 GET {{host}}/api/notes/shared
 Authorization: Bearer {{token}}
 
+### Import notes (an export document, or just its "notes")
+POST {{host}}/api/notes/import
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "notes": [ { "id": 7, "title": "Imported", "content": "From another instance", "visibility": "private" } ] }
+
+### Digest opt-ins and next send time
+GET {{host}}/api/digest
+Authorization: Bearer {{token}}
+
+### Opt in to both digest sections
+PUT {{host}}/api/digest
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "sharedNotes": true, "publicNotes": true }
+
+### Preview tonight's digest
+GET {{host}}/api/digest/preview
+Authorization: Bearer {{token}}
+
+### Admin: list users
+GET {{host}}/api/admin/users
+Authorization: Bearer {{token}}
+
+### Admin: change a user's role
+PUT {{host}}/api/admin/users/2/role
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "role": "Administrator" }
+
+### Admin: all notes (optionally for one owner)
+GET {{host}}/api/admin/notes?userId=2
+Authorization: Bearer {{token}}
+
+### Admin: audit log
+GET {{host}}/api/admin/audit-log
+Authorization: Bearer {{token}}
+
+### Health
+GET {{host}}/health
+
 ### Logout
 POST {{host}}/api/auth/logout
 Authorization: Bearer {{token}}

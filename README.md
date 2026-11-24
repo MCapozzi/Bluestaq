@@ -9,7 +9,9 @@ authorized against a server-side session stored in the database.
 ## Features
 
 - **Notes CRUD** for many users, each seeing only the notes they may read.
-- **Session authentication**: server-side sessions via cookie or `Authorization: Bearer` token, sliding expiry.
+- **Session authentication**: server-side sessions via cookie or `Authorization: Bearer` token, sliding expiry, one
+  active session per user.
+- **Registration error handling**: database failures alert online administrators and point repeat failures to support.
 - **Sharing**: notes are private by default; make one public (any logged-in user) or share it read-only with users.
 - **Bulk export** by note IDs, owner or creation date range, as JSON or CSV.
 - **Bulk import** of an export file (JSON or CSV), e.g. to move notes between instances.
@@ -63,7 +65,7 @@ The schema is applied by EF Core migrations on startup when `Database:MigrateOnS
 (on in Development and compose). To apply them manually instead: `dotnet tool restore && dotnet ef database update -p src/Bluestaq.Notes.Api`.
 
 In Development the OpenAPI document is served at `/openapi/v1.json`. `src/Bluestaq.Notes.Api/Bluestaq.Notes.Api.http`
-has ready-made requests for every endpoint.
+has ready-made requests for every HTTP endpoint (the `/ws/alerts` WebSocket needs a WebSocket client).
 
 ### Configuration
 
@@ -75,13 +77,14 @@ has ready-made requests for every endpoint.
 | `Sessions:CookieName` | `notes_session` | Name of the session cookie |
 | `RateLimiting:Auth:PermitLimit` | `10` | Login/register requests allowed per client IP per window |
 | `RateLimiting:Auth:Window` | `00:01:00` | Rate-limit window; excess requests get 429 |
+| `Registration:SupportThreshold` | `3` | Registration failures in a row (per client IP) before users are told to email support |
+| `Registration:FailureMemory` | `01:00:00` | How long a client's failure count is kept without another failure |
 | `Database:Password` | _(none)_ | If set, overrides the password in `ConnectionStrings:Notes` (safe for any characters) |
 | `Admin:BootstrapUsername` / `Admin:BootstrapPassword` | _(empty)_ | Create (or promote) this administrator at startup |
 | `AdminAudit:LogFilePath` | `logs/admin-audit-.log` | Admin audit JSON-lines file, rolled daily (date inserted before `.log`) |
 | `AdminAudit:RetainedFileCount` | `90` | Number of daily admin audit files kept |
 | `Alerts:PushInterval` | `00:30:00` | Minimum time between alert pushes to the same user |
 | `Alerts:PollInterval` | `00:00:05` | How often connected users are checked for due alerts |
-| `Registration:SupportThreshold` | `3` | Registration failures in a row (per client IP) before users are told to email support |
 | `Alerts:SendTimeout` | `00:00:10` | A socket that doesn't accept an alert within this time is dropped |
 | `Export:MaxNotes` | `10000` | Largest export allowed |
 | `Import:MaxNotes` | `10000` | Largest import allowed |
@@ -177,6 +180,17 @@ with status `1008`.
 `lastUpdatedAt` describe the note's latest edit. Each API instance pushes only to the sockets connected to it, and a
 push to any of a user's sockets counts as that user's push for the interval. With several API replicas, use sticky
 sessions so all of a user's sockets land on the same replica; otherwise a socket on another replica can miss a push.
+A Redis backplane would fix this; it is out of scope for this project but planned for a production release.
+
+Administrators' sockets also receive `registrationFailed` messages immediately, without throttling (see
+[Failed registrations](#failed-registrations)):
+
+```json
+{
+  "type": "registrationFailed", "occurredAt": "2026-11-24T23:10:00Z", "username": "carol",
+  "clientIp": "203.0.113.7", "consecutiveFailures": 1, "error": "Unable to connect to any of the specified MySQL hosts."
+}
+```
 
 ### Email digests
 
@@ -203,7 +217,8 @@ after midnight; a day missed because the service was down longer than that is sk
 subject and greeting name the user it is for. Mail goes over SMTP (`Digest:Smtp:*`); `docker compose up` includes
 [Mailpit](https://mailpit.axllent.org/), which catches the mail and shows it at http://localhost:8025. Each user is
 claimed with a conditional update before sending, so several API replicas don't send the same digest twice; a failed
-send is retried on the next poll within the send window.
+send is retried on the next poll within the send window. Known gap: if the SMTP connection drops after the server has
+accepted a message, the send counts as failed and the retry can deliver a duplicate (marked TODO in `SmtpEmailSender`).
 
 ### Failed registrations
 
@@ -211,7 +226,10 @@ If registration fails because of a database error other than a taken username, t
 try registering again, and immediately pushes a `registrationFailed` alert (username, client IP, error, failures in a
 row) to every administrator connected to `/ws/alerts`. After `Registration:SupportThreshold` (3) failures in a row from
 the same client IP, the response instead asks the user to email **Support@BluestaqNotes.com** (also returned as
-`supportEmail`). A successful registration resets the count.
+`supportEmail`). A successful registration resets the count. Counts are kept in memory per API instance.
+
+Registering also ends any session the request carries (cookie or Bearer token) and clears the session cookie, so the
+user must log in to get a fresh session.
 
 ### Administrators
 
@@ -219,7 +237,7 @@ Users have a `role`: `User` (default) or `Administrator`. Registration always cr
 comes from `Admin:BootstrapUsername`/`Admin:BootstrapPassword` at startup (created if missing; an existing regular
 account is promoted only if the configured password matches it, and startup fails otherwise; passwords are never
 changed); after that, administrators promote or demote others via `/api/admin`. A role
-change takes effect on the user's next request.
+change takes effect on the user's next request, and on their open alert sockets immediately.
 
 Administrators can read, update, delete, export and change sharing on **any** note through the normal `/api/notes`
 endpoints, regardless of owner, visibility or shares.
@@ -297,11 +315,16 @@ curl -s localhost:8080/api/notes -H "Authorization: Bearer $TOKEN"
 
 - **Login** verifies the password (ASP.NET Core Identity `PasswordHasher`, PBKDF2) and creates a row in `sessions`
   holding a SHA-256 hash of a random 256-bit token. Only the hash is stored, so a DB leak doesn't expose usable tokens.
+- **One session per user**: login deletes the user's earlier sessions (signing out other devices and closing their alert
+  sockets) and any session the request already carried, and replaces any session cookie already set on the response.
+  Registering also ends the caller's session.
 - The token is returned in the response body (for API clients, sent as `Authorization: Bearer <token>`) and as an
   `HttpOnly`, `SameSite=Strict` cookie (for browsers; `Secure` when served over HTTPS).
 - A custom authentication handler (`SessionAuthenticationHandler`) resolves the token to an unexpired session on every
   request and slides its expiry forward. A global fallback policy requires an authenticated user on every endpoint.
 - **Logout** deletes the session row, so the token stops working immediately.
+- If the database is unreachable while validating a session, anonymous endpoints (`register`, `login`) still run and
+  handle the error themselves; other endpoints fail.
 - Notes are always queried through `VisibleTo(userId, isAdmin)`: everything for administrators, otherwise
   `ReadableBy(userId)` (own, public, or shared). A note you can't read returns
   **404**, not 403, so note ids can't be probed.
@@ -312,8 +335,8 @@ curl -s localhost:8080/api/notes -H "Authorization: Bearer $TOKEN"
 ```
 src/Bluestaq.Notes.Api
   Admin/         bootstrapper, admin audit middleware, DB + file audit loggers
-  Alerts/        alert interceptor, aggregation service, WebSocket endpoint and dispatcher
-  Auth/          session service, authentication handler, roles, options
+  Alerts/        alert interceptor, aggregation service, WebSocket endpoint, dispatcher, admin alert sender
+  Auth/          session service, authentication handler, roles, registration failure tracker, options
   Controllers/   AuthController, NotesController, NoteSharingController, DigestController, AdminController
   Contracts/     request/response DTOs and validation limits
   Digest/        digest builder and scheduler, SMTP email sender
@@ -356,5 +379,8 @@ python3 scripts/check-import-coverage.py
 - Edit permission for shared users (currently shares are read-only).
 - Optimistic concurrency (`ETag`/`If-Match`) for simultaneous edits.
 - Per-account lockout, and a background job to purge expired sessions.
+- Redis backplane so alerts reach sockets on any API replica (see TODO in `AlertDispatcher`).
+- Duplicate-safe SMTP sends (TODO in `SmtpEmailSender`), and tuning admin audit file retention/size for production.
+- Possibly moving bulk export/import to JSON only (TODO in the CSV writer and reader).
 - TLS termination (reverse proxy or Kestrel certificates) for non-local deployments.
 - Search and tagging.
