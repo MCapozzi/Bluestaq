@@ -15,6 +15,26 @@ docker compose up --build
 # API on http://localhost:8080, MySQL on localhost:3306
 ```
 
+### Containerized / cloud deployment
+
+`docker-compose.prod.yml` builds the published API image and runs it with MySQL. Secrets come from the environment
+or a `.env` file (see `.env.example`); compose refuses to start if `MYSQL_ROOT_PASSWORD` or `MYSQL_PASSWORD` is unset.
+
+```bash
+cp .env.example .env            # set real passwords
+docker compose -f docker-compose.prod.yml up -d --build
+curl http://<host>:8080/health
+```
+
+- MySQL is only on the internal `backend` network (not published); data lives in the `mysql-data` volume.
+- The API container runs as non-root with a read-only filesystem and `restart: unless-stopped`; migrations run at
+  startup (`MIGRATE_ON_STARTUP`).
+- To ship to a registry: set `API_IMAGE=registry.example.com/bluestaq-notes-api:1.0.0`, then
+  `docker compose -f docker-compose.prod.yml build api && docker compose -f docker-compose.prod.yml push api`, and on
+  the target host `pull` + `up -d`.
+- Put the API behind a TLS-terminating reverse proxy / load balancer and set `FORWARDED_HEADERS_ENABLED=true` so
+  rate limiting sees real client IPs and cookies are marked `Secure`.
+
 ### Locally
 
 Requires the .NET 10 SDK and a MySQL 8 server. `appsettings.Development.json` points at
