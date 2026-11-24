@@ -20,7 +20,9 @@ public sealed class NotesApiFactory : WebApplicationFactory<Program>, IAsyncLife
 
     public CapturingEmailSender Emails { get; } = new();
 
-    private readonly MySqlContainer _mysql = new MySqlBuilder(Environment.GetEnvironmentVariable("NOTES_TEST_MYSQL_IMAGE") ?? "mysql:8.4").Build();
+    private readonly MySqlContainer _mysql = new MySqlBuilder(Environment.GetEnvironmentVariable("NOTES_TEST_MYSQL_IMAGE") ?? "mysql:8.4")
+        .WithCommand("--log-bin-trust-function-creators=1") // lets tests create triggers that simulate database failures
+        .Build();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {

@@ -1,3 +1,4 @@
+using Bluestaq.Notes.Api.Alerts;
 using Bluestaq.Notes.Api.Auth;
 using Bluestaq.Notes.Api.Contracts;
 using Bluestaq.Notes.Api.Controllers;
@@ -7,6 +8,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Bluestaq.Notes.Api.UnitTests;
@@ -16,6 +19,8 @@ public sealed class AuthControllerTests : IAsyncLifetime
     private const string Password = "correct-horse-battery";
     private readonly TestDb _db = new();
     private readonly SessionAuthOptions _options = new();
+    private readonly RegistrationFailures _failures = new(new MemoryCache(new MemoryCacheOptions()), Options.Create(new RegistrationOptions()));
+    private readonly AlertConnections _connections = new();
     private NotesDbContext _ctx = null!;
 
     public Task InitializeAsync()
@@ -31,7 +36,8 @@ public sealed class AuthControllerTests : IAsyncLifetime
     }
 
     private AuthController Controller(IPasswordHasher<User>? hasher = null, System.Security.Claims.ClaimsPrincipal? user = null) =>
-        new(_ctx, new SessionService(_ctx, Options.Create(_options), _db.Clock), hasher ?? new PasswordHasher<User>(), Options.Create(_options), _db.Clock)
+        new(_ctx, new SessionService(_ctx, Options.Create(_options), _db.Clock), hasher ?? new PasswordHasher<User>(), Options.Create(_options), _db.Clock,
+            _failures, new AdminAlertSender(_connections, Options.Create(new AlertOptions()), NullLogger<AdminAlertSender>.Instance), NullLogger<AuthController>.Instance)
         {
             ControllerContext = TestPrincipals.ControllerContext(user ?? new System.Security.Claims.ClaimsPrincipal()),
         };
@@ -51,6 +57,42 @@ public sealed class AuthControllerTests : IAsyncLifetime
         var stored = await _ctx.Users.AsNoTracking().SingleAsync();
         Assert.NotEqual(Password, stored.PasswordHash);
         Assert.Equal(TestDb.Start.UtcDateTime, stored.CreatedAt);
+    }
+
+    [Fact]
+    public async Task Register_database_failure_alerts_admins_asks_to_retry_then_points_to_support()
+    {
+        var admin = new AlertTests.FakeSocket();
+        var user = new AlertTests.FakeSocket();
+        _connections.Add(1, 1, admin, isAdministrator: true);
+        _connections.Add(2, 2, user);
+        await _ctx.Database.ExecuteSqlRawAsync("CREATE TRIGGER fail_users BEFORE INSERT ON users BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END;");
+
+        async Task<ProblemDetails> FailAsync()
+        {
+            var result = Assert.IsType<ObjectResult>(await Controller().Register(new RegisterRequest("alice", Password), default));
+            Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
+            return Assert.IsType<ProblemDetails>(result.Value);
+        }
+
+        Assert.Contains("Please try registering again", (await FailAsync()).Title);
+        Assert.Contains("Please try registering again", (await FailAsync()).Title);
+        var third = await FailAsync();
+        Assert.Equal("Registration failed 3 times in a row. Please email Support@BluestaqNotes.com for help.", third.Title);
+        Assert.Equal(("Support@BluestaqNotes.com", 3), (third.Extensions["supportEmail"], third.Extensions["consecutiveFailures"]));
+
+        Assert.Equal(3, admin.Sent.Count);
+        var alert = System.Text.Encoding.UTF8.GetString(admin.Sent[2]);
+        Assert.Contains("\"type\":\"registrationFailed\"", alert);
+        Assert.Contains("\"username\":\"alice\"", alert);
+        Assert.Contains("\"consecutiveFailures\":3", alert);
+        Assert.Contains("disk I/O error", alert);
+        Assert.Empty(user.Sent);
+
+        await _ctx.Database.ExecuteSqlRawAsync("DROP TRIGGER fail_users;");
+        _ctx.ChangeTracker.Clear();
+        await RegisterAsync("alice");
+        Assert.Equal(1, _failures.Record("unknown"));
     }
 
     [Fact]

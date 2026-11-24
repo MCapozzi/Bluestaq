@@ -34,6 +34,10 @@ builder.Services.AddDbContext<NotesDbContext>((sp, options) => options
 builder.Services.Configure<AlertOptions>(builder.Configuration.GetSection(AlertOptions.SectionName));
 builder.Services.AddScoped<AlertService>();
 builder.Services.AddSingleton<AlertConnections>();
+builder.Services.AddSingleton<AdminAlertSender>();
+builder.Services.AddMemoryCache();
+builder.Services.Configure<RegistrationOptions>(builder.Configuration.GetSection(RegistrationOptions.SectionName));
+builder.Services.AddSingleton<RegistrationFailures>();
 builder.Services.AddSingleton<AlertDispatcher>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AlertDispatcher>());
 builder.Services.Configure<ExportOptions>(builder.Configuration.GetSection(ExportOptions.SectionName));

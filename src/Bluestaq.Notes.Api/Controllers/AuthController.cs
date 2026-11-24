@@ -1,3 +1,5 @@
+using System.Data.Common;
+using Bluestaq.Notes.Api.Alerts;
 using Bluestaq.Notes.Api.Auth;
 using Bluestaq.Notes.Api.Contracts;
 using Bluestaq.Notes.Api.Data;
@@ -19,7 +21,10 @@ public sealed class AuthController(
     SessionService sessions,
     IPasswordHasher<User> passwordHasher,
     IOptions<SessionAuthOptions> sessionOptions,
-    TimeProvider clock) : ControllerBase
+    TimeProvider clock,
+    RegistrationFailures registrationFailures,
+    AdminAlertSender adminAlerts,
+    ILogger<AuthController> logger) : ControllerBase
 {
     // Used to equalize login timing when the username does not exist.
     private static readonly string DummyHash = new PasswordHasher<User>().HashPassword(null!, "not-a-real-password");
@@ -29,29 +34,34 @@ public sealed class AuthController(
     [HttpPost("register")]
     [ProducesResponseType<UserResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> Register(RegisterRequest request, CancellationToken ct)
     {
         var username = NormalizeUsername(request.Username);
-        if (await db.Users.AnyAsync(u => u.Username == username, ct))
-        {
-            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Username is already taken.");
-        }
-
-        var user = new User { Username = username, PasswordHash = "", CreatedAt = clock.GetUtcNow().UtcDateTime };
-        user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
-        db.Users.Add(user);
-
         try
         {
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException)
-        {
-            // Lost a race with a concurrent registration for the same username.
-            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Username is already taken.");
-        }
+            if (await db.Users.AnyAsync(u => u.Username == username, ct))
+            {
+                return UsernameTaken();
+            }
 
-        return CreatedAtAction(nameof(Me), null, ToResponse(user));
+            var user = new User { Username = username, PasswordHash = "", CreatedAt = clock.GetUtcNow().UtcDateTime };
+            user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
+            db.Users.Add(user);
+            await db.SaveChangesAsync(ct);
+            registrationFailures.Reset(ClientKey);
+            return CreatedAtAction(nameof(Me), null, ToResponse(user));
+        }
+        catch (Exception ex) when (IsDatabaseError(ex) && !ct.IsCancellationRequested)
+        {
+            if (ex is DbUpdateException && await IsTakenAsync(username, ct))
+            {
+                // Lost a race with a concurrent registration for the same username.
+                return UsernameTaken();
+            }
+
+            return await RegistrationFailedAsync(username, ex);
+        }
     }
 
     [AllowAnonymous]
@@ -102,6 +112,49 @@ public sealed class AuthController(
         var userId = User.GetUserId();
         var user = await db.Users.AsNoTracking().SingleAsync(u => u.Id == userId, ct);
         return Ok(ToResponse(user));
+    }
+
+    private string ClientKey => HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+    private IActionResult UsernameTaken() => Problem(statusCode: StatusCodes.Status409Conflict, title: "Username is already taken.");
+
+    private static bool IsDatabaseError(Exception ex) => ex is DbException or DbUpdateException || ex.InnerException is DbException;
+
+    private async Task<bool> IsTakenAsync(string username, CancellationToken ct)
+    {
+        try
+        {
+            return await db.Users.AnyAsync(u => u.Username == username, ct);
+        }
+        catch (DbException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Alerts online admins, then asks the user to retry, or to email support after repeated failures.</summary>
+    private async Task<IActionResult> RegistrationFailedAsync(string username, Exception ex)
+    {
+        var failures = registrationFailures.Record(ClientKey);
+        logger.LogError(ex, "Registering {Username} failed ({Failures} in a row from {Client}).", username, failures, ClientKey);
+        await adminAlerts.SendAsync(
+            new RegistrationFailedAlert(clock.GetUtcNow().UtcDateTime, username, HttpContext.Connection.RemoteIpAddress?.ToString(), failures, ex.GetBaseException().Message),
+            CancellationToken.None);
+
+        var needsSupport = registrationFailures.NeedsSupport(failures);
+        var result = (ObjectResult)Problem(
+            statusCode: StatusCodes.Status503ServiceUnavailable,
+            title: needsSupport
+                ? $"Registration failed {failures} times in a row. Please email {RegistrationOptions.SupportEmail} for help."
+                : "Registration failed because of a temporary problem. Please try registering again.");
+        var problem = (ProblemDetails)result.Value!;
+        problem.Extensions["consecutiveFailures"] = failures;
+        if (needsSupport)
+        {
+            problem.Extensions["supportEmail"] = RegistrationOptions.SupportEmail;
+        }
+
+        return result;
     }
 
     private static string NormalizeUsername(string username) => username.Trim().ToLowerInvariant();

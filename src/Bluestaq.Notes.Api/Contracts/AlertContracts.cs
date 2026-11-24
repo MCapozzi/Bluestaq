@@ -8,6 +8,14 @@ public sealed record AlertMessage(DateTime SentAt, IReadOnlyList<NoteAlertItem> 
     public string Type => "alerts";
 }
 
+/// <summary>Pushed immediately to online administrators when a registration fails for a reason other than a taken username.</summary>
+/// <param name="ConsecutiveFailures">Registration failures in a row from the same client IP, including this one.</param>
+/// <param name="Error">The underlying database error message.</param>
+public sealed record RegistrationFailedAlert(DateTime OccurredAt, string Username, string? ClientIp, int ConsecutiveFailures, string Error)
+{
+    public string Type => "registrationFailed";
+}
+
 /// <param name="SharedBy">Username of whoever shared the note with the recipient (the owner, unless an admin shared it).</param>
 /// <param name="UpdatedBy">Username of whoever last updated the note.</param>
 /// <param name="LastUpdatedAt">When the note was last updated (UTC).</param>

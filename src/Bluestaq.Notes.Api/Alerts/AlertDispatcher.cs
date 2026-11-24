@@ -106,7 +106,7 @@ public sealed class AlertDispatcher(
                 timeout.CancelAfter(options.Value.SendTimeout);
                 try
                 {
-                    await connection.Socket.SendAsync(payload, WebSocketMessageType.Text, endOfMessage: true, timeout.Token);
+                    await connection.SendAsync(payload, timeout.Token);
                     sent++;
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)

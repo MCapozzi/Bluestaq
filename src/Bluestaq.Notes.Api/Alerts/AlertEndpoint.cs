@@ -26,7 +26,7 @@ public static class AlertEndpoint
         }
 
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
-        var connection = connections.Add(context.User.GetUserId(), context.User.GetSessionId(), socket);
+        var connection = connections.Add(context.User.GetUserId(), context.User.GetSessionId(), socket, context.User.IsAdministrator());
         dispatcher.Wake();
         try
         {

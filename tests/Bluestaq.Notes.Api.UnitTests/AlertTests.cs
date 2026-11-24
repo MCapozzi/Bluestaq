@@ -366,7 +366,7 @@ public sealed class AlertTests : IAsyncLifetime
         Assert.Equal(allowed, AlertEndpoint.IsOriginAllowed(request, options));
     }
 
-    private sealed class FakeSocket : WebSocket
+    internal sealed class FakeSocket : WebSocket
     {
         public List<byte[]> Sent { get; } = [];
         public bool FailSends { get; init; }

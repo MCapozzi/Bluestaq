@@ -81,6 +81,7 @@ has ready-made requests for every endpoint.
 | `AdminAudit:RetainedFileCount` | `90` | Number of daily admin audit files kept |
 | `Alerts:PushInterval` | `00:30:00` | Minimum time between alert pushes to the same user |
 | `Alerts:PollInterval` | `00:00:05` | How often connected users are checked for due alerts |
+| `Registration:SupportThreshold` | `3` | Registration failures in a row (per client IP) before users are told to email support |
 | `Alerts:SendTimeout` | `00:00:10` | A socket that doesn't accept an alert within this time is dropped |
 | `Export:MaxNotes` | `10000` | Largest export allowed |
 | `Import:MaxNotes` | `10000` | Largest import allowed |
@@ -101,7 +102,7 @@ All endpoints except `register`, `login` and `/health` require a valid session. 
 
 | Method | Path | Description | Success |
 | --- | --- | --- | --- |
-| POST | `/api/auth/register` | Create a user `{ username, password }` | 201 |
+| POST | `/api/auth/register` | Create a user `{ username, password }` | 201 (409 taken, 503 database error) |
 | POST | `/api/auth/login` | Start a session `{ username, password }` → `{ token, expiresAt, user }` + session cookie | 200 |
 | POST | `/api/auth/logout` | Revoke the current session | 204 |
 | GET | `/api/auth/me` | Current user | 200 |
@@ -203,6 +204,14 @@ subject and greeting name the user it is for. Mail goes over SMTP (`Digest:Smtp:
 [Mailpit](https://mailpit.axllent.org/), which catches the mail and shows it at http://localhost:8025. Each user is
 claimed with a conditional update before sending, so several API replicas don't send the same digest twice; a failed
 send is retried on the next poll within the send window.
+
+### Failed registrations
+
+If registration fails because of a database error other than a taken username, the API returns `503` asking the user to
+try registering again, and immediately pushes a `registrationFailed` alert (username, client IP, error, failures in a
+row) to every administrator connected to `/ws/alerts`. After `Registration:SupportThreshold` (3) failures in a row from
+the same client IP, the response instead asks the user to email **Support@BluestaqNotes.com** (also returned as
+`supportEmail`). A successful registration resets the count.
 
 ### Administrators
 
