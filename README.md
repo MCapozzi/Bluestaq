@@ -6,6 +6,19 @@ A RESTful ASP.NET Core (.NET 10) API that lets multiple users create, read, upda
 Data is persisted in MySQL via EF Core (Oracle's `MySql.EntityFrameworkCore` provider), and every request is
 authorized against a server-side session stored in the database.
 
+## Features
+
+- **Notes CRUD** for many users, each seeing only the notes they may read.
+- **Session authentication**: server-side sessions via cookie or `Authorization: Bearer` token, sliding expiry.
+- **Sharing**: notes are private by default; make one public (any logged-in user) or share it read-only with users.
+- **Bulk export** by note IDs, owner or creation date range, as JSON or CSV.
+- **Bulk import** of an export file (JSON or CSV), e.g. to move notes between instances.
+- **Audit trail** on every note: who created and last updated it, and when.
+- **Administrators** can reach every note; all their actions go to a database table and a separate log file.
+- **WebSocket alerts** when a note is shared with you or a shared note changes, at most one push per 30 minutes.
+- **Docker Compose** files for local development and for deployment.
+- **Tests**: unit tests with coverage gates and MySQL integration tests (see [Tests](#tests)).
+
 ## Running
 
 ### Docker Compose (API + MySQL)
@@ -68,6 +81,8 @@ has ready-made requests for every endpoint.
 | `Alerts:PushInterval` | `00:30:00` | Minimum time between alert pushes to the same user |
 | `Alerts:PollInterval` | `00:00:05` | How often connected users are checked for due alerts |
 | `Alerts:SendTimeout` | `00:00:10` | A socket that doesn't accept an alert within this time is dropped |
+| `Export:MaxNotes` | `10000` | Largest export allowed |
+| `Import:MaxNotes` | `10000` | Largest import allowed |
 | `Alerts:AllowedOrigins` | _(empty)_ | Extra browser origins allowed to open a cookie-authenticated alert socket |
 
 Use environment variables in containers, e.g. `ConnectionStrings__Notes=...`.
@@ -89,6 +104,7 @@ All endpoints except `register`, `login` and `/health` require a valid session. 
 | PUT | `/api/notes/{id}` | Replace `{ title, content }` | 200 |
 | DELETE | `/api/notes/{id}` | Delete a note | 204 |
 | POST | `/api/notes/export` | Bulk export notes you can read (see below) | 200 |
+| POST | `/api/notes/import` | Bulk import an export file as your own new notes (see below) | 201 |
 | GET | `/api/notes/{id}/sharing` | Visibility and share list (owner only) | 200 |
 | PUT | `/api/notes/{id}/visibility` | `{ "visibility": "public" \| "private" }` (owner only) | 200 |
 | POST | `/api/notes/{id}/shares` | Share with a user `{ username }`; idempotent (owner only) | 200 |
@@ -185,6 +201,38 @@ Add `"format": "csv"` to get a `text/csv` download (`notes-export-<timestamp>.cs
 spreadsheet formula injection. Supplying zero or more than one selector, or an incomplete/inverted range, returns 400. A selection matching more than
 `Export:MaxNotes` notes (default 10,000) is rejected with 400 rather than buffered.
 
+### Bulk import
+
+`POST /api/notes/import` takes a file produced by `POST /api/notes/export`, from this instance or another one:
+
+- **JSON** (`Content-Type: application/json`): the export document as-is (`{ exportedAt, count, notes, notFoundIds }`).
+  Only `notes` is read, so `{ "notes": [{ "title": "...", "content": "...", "visibility": "public" }] }` works too.
+- **CSV** (`Content-Type: text/csv`): the CSV export. Columns are matched by header name; `Title` and `Content` are
+  required, `Id` and `Visibility` optional, others ignored. The export's `'` formula guard is removed again.
+
+What is imported:
+
+- Each note becomes a **new note owned by you**, with a new ID, so IDs from another instance can't clash.
+- `title`, `content` and `visibility` are kept (`private` if missing). Shares aren't part of the export, so imported
+  notes have none.
+- `ownerId` and the audit fields in the file are ignored, because those user IDs belong to the source instance. The
+  audit fields are stamped as you creating the notes at import time.
+- The response (201) is `{ importedAt, count, notes: [{ sourceId, note }] }`, where `sourceId` is the note's `id` in
+  the file, so you can map old IDs to new ones.
+
+An import is all-or-nothing: if any note is invalid (same limits as creating a note), or the file has more than
+`Import:MaxNotes` notes (default 10,000), or the CSV is malformed, nothing is saved and you get 400 with errors keyed
+by position, e.g. `Notes[3].Title`.
+
+Moving notes between instances:
+
+```bash
+curl -s -X POST https://old.example/api/notes/export -H "Authorization: Bearer $OLD" \
+  -H 'Content-Type: application/json' -d "{\"userId\": $MY_OLD_ID}" > notes.json
+curl -s -X POST https://new.example/api/notes/import -H "Authorization: Bearer $NEW" \
+  -H 'Content-Type: application/json' --data-binary @notes.json
+```
+
 ### Example
 
 ```bash
@@ -223,7 +271,9 @@ src/Bluestaq.Notes.Api
   Data/          NotesDbContext, AuditInterceptor and EF Core migrations
   Domain/        User, Note, NoteShare, NoteAlert, Session, AdminAuditEntry entities; NoteAccess.ReadableBy
   Export/        NoteExporter (query) and NoteCsvWriter
-tests/Bluestaq.Notes.Api.UnitTests  unit tests (in-memory SQLite, fake clock), with a 70% line-coverage gate
+  Import/        NoteImporter and NoteCsvReader
+scripts/         check-import-coverage.py (import coverage gate)
+tests/Bluestaq.Notes.Api.UnitTests  unit tests (in-memory SQLite, fake clock), with line-coverage gates
 tests/Bluestaq.Notes.Api.Tests      integration tests (WebApplicationFactory + Testcontainers MySQL)
 ```
 
@@ -236,10 +286,20 @@ dotnet test
 Integration tests run the real API in-process against a throwaway MySQL container, so Docker must be running.
 Set `NOTES_TEST_MYSQL_IMAGE` to use a different MySQL image.
 
-Unit tests need no Docker. To enforce the line-coverage gate (fails below 70%; migrations and generated code excluded):
+Unit tests need no Docker. Every endpoint has at least one happy-path integration test.
+
+### Coverage targets
+
+| Scope | Target (line coverage) | Enforced by |
+| --- | --- | --- |
+| Whole API (migrations and generated code excluded) | 70% | coverlet threshold in the unit test project |
+| Bulk import (`Import/`, `ImportContracts.cs`, the import actions in `NotesController`) | 90% | `scripts/check-import-coverage.py` |
+
+Both gates run in CI. To run them locally:
 
 ```bash
 dotnet test tests/Bluestaq.Notes.Api.UnitTests /p:CollectCoverage=true
+python3 scripts/check-import-coverage.py
 ```
 
 ## Possible next steps

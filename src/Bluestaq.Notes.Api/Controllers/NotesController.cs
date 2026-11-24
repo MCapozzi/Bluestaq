@@ -4,6 +4,7 @@ using Bluestaq.Notes.Api.Contracts;
 using Bluestaq.Notes.Api.Data;
 using Bluestaq.Notes.Api.Domain;
 using Bluestaq.Notes.Api.Export;
+using Bluestaq.Notes.Api.Import;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,7 +16,7 @@ namespace Bluestaq.Notes.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/notes")]
-public sealed class NotesController(NotesDbContext db, NoteExporter exporter) : ControllerBase
+public sealed class NotesController(NotesDbContext db, NoteExporter exporter, NoteImporter importer) : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType<PagedResponse<NoteResponse>>(StatusCodes.Status200OK)]
@@ -156,6 +157,49 @@ public sealed class NotesController(NotesDbContext db, NoteExporter exporter) : 
         }
 
         return Ok(export);
+    }
+
+    /// <summary>
+    /// Bulk-imports notes from an export document (JSON body) as new notes owned by the caller. Imports are
+    /// all-or-nothing: any invalid note rejects the whole request with 400.
+    /// </summary>
+    [HttpPost("import")]
+    [Consumes("application/json")]
+    [ProducesResponseType<NoteImportResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    public Task<IActionResult> Import(NoteImportRequest request, CancellationToken ct) => ImportCoreAsync(() => request.Notes!, ct);
+
+    /// <summary>Bulk-imports notes from a CSV export (<c>text/csv</c> body), with the same rules as the JSON import.</summary>
+    [HttpPost("import")]
+    [Consumes("text/csv")]
+    [ProducesResponseType<NoteImportResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ImportCsv(CancellationToken ct)
+    {
+        using var reader = new StreamReader(Request.Body, System.Text.Encoding.UTF8);
+        var csv = await reader.ReadToEndAsync(ct);
+        return await ImportCoreAsync(() => NoteCsvReader.Read(csv), ct);
+    }
+
+    private async Task<IActionResult> ImportCoreAsync(Func<IReadOnlyList<ImportedNote?>> notes, CancellationToken ct)
+    {
+        try
+        {
+            var result = await importer.ImportAsync(User.GetUserId(), notes(), ct);
+            return StatusCode(StatusCodes.Status201Created, result);
+        }
+        catch (NoteImportException ex)
+        {
+            foreach (var (key, messages) in ex.Errors)
+            {
+                foreach (var message in messages)
+                {
+                    ModelState.AddModelError(key, message);
+                }
+            }
+
+            return ValidationProblem(ModelState);
+        }
     }
 
     private IQueryable<Note> OwnedNotes()

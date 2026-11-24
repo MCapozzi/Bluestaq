@@ -31,7 +31,8 @@ public sealed class NotesControllerTests : IAsyncLifetime
     private NotesController ControllerFor(long userId)
     {
         _db.CurrentUser.UserId = userId;
-        return new NotesController(_ctx, new NoteExporter(_ctx, _db.Clock, Microsoft.Extensions.Options.Options.Create(new ExportOptions { MaxNotes = 3 })))
+        return new NotesController(_ctx, new NoteExporter(_ctx, _db.Clock, Microsoft.Extensions.Options.Options.Create(new ExportOptions { MaxNotes = 3 })),
+            new Import.NoteImporter(_ctx, _db.Clock, Microsoft.Extensions.Options.Options.Create(new Import.ImportOptions { MaxNotes = 3 })))
         {
             ControllerContext = TestPrincipals.ControllerContext(TestPrincipals.For(userId)),
         };
@@ -122,6 +123,48 @@ public sealed class NotesControllerTests : IAsyncLifetime
         Assert.IsType<NotFoundResult>(await ControllerFor(_bobId).Delete(note.Id, default));
         Assert.IsType<NoContentResult>(await ControllerFor(_aliceId).Delete(note.Id, default));
         Assert.IsType<NotFoundResult>(await ControllerFor(_aliceId).Delete(note.Id, default));
+    }
+
+    [Fact]
+    public async Task Import_returns_201_with_new_notes_owned_by_the_caller()
+    {
+        var result = await ControllerFor(_bobId).Import(
+            new NoteImportRequest { Notes = [new ImportedNote { Id = 12, Title = "T", Content = "C" }] }, default);
+
+        var created = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status201Created, created.StatusCode);
+        var imported = Assert.Single(Assert.IsType<NoteImportResponse>(created.Value).Notes);
+        Assert.Equal((12L, _bobId), ((long)imported.SourceId!, imported.Note.OwnerId));
+    }
+
+    [Fact]
+    public async Task Import_returns_validation_problem_for_invalid_notes()
+    {
+        var result = await ControllerFor(_bobId).Import(new NoteImportRequest { Notes = [null] }, default);
+
+        var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
+        Assert.Contains("Notes[0]", problem.Errors.Keys);
+    }
+
+    [Fact]
+    public async Task Import_csv_reads_the_request_body()
+    {
+        var controller = ControllerFor(_aliceId);
+        controller.HttpContext.Request.Body = new MemoryStream("Title,Content\r\nFrom CSV,Body\r\n"u8.ToArray());
+
+        var created = Assert.IsType<ObjectResult>(await controller.ImportCsv(default));
+
+        Assert.Equal("From CSV", Assert.Single(Assert.IsType<NoteImportResponse>(created.Value).Notes).Note.Title);
+    }
+
+    [Fact]
+    public async Task Import_csv_returns_validation_problem_for_malformed_csv()
+    {
+        var controller = ControllerFor(_aliceId);
+        controller.HttpContext.Request.Body = new MemoryStream("Id\r\n1\r\n"u8.ToArray());
+
+        var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(await controller.ImportCsv(default)).Value);
+        Assert.Contains("Csv", problem.Errors.Keys);
     }
 
     [Fact]

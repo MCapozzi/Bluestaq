@@ -16,5 +16,7 @@ jobs:
       - run: dotnet build -c Release
       # Unit tests with a line-coverage gate: fails the build below 70%.
       - run: dotnet test tests/Bluestaq.Notes.Api.UnitTests -c Release --no-build /p:CollectCoverage=true
+      # Bulk import has its own, stricter gate: 90% line coverage.
+      - run: python3 scripts/check-import-coverage.py tests/Bluestaq.Notes.Api.UnitTests/coverage.cobertura.xml 90
       # Integration tests start a MySQL container via Testcontainers (Docker is available on GitHub runners).
       - run: dotnet test tests/Bluestaq.Notes.Api.Tests -c Release --no-build

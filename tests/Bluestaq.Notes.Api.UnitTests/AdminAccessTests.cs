@@ -37,7 +37,7 @@ public sealed class AdminAccessTests : IAsyncLifetime
     private ControllerContext AdminContext() => TestPrincipals.ControllerContext(TestPrincipals.Admin(_adminId));
 
     private NotesController Notes() =>
-        new(_ctx, new NoteExporter(_ctx, _db.Clock, Options.Create(new ExportOptions()))) { ControllerContext = AdminContext() };
+        new(_ctx, new NoteExporter(_ctx, _db.Clock, Options.Create(new ExportOptions())), new Import.NoteImporter(_ctx, _db.Clock, Options.Create(new Import.ImportOptions()))) { ControllerContext = AdminContext() };
 
     [Fact]
     public async Task Admin_can_read_update_and_delete_any_note_and_is_recorded_as_updater()
@@ -75,7 +75,7 @@ public sealed class AdminAccessTests : IAsyncLifetime
     [Fact]
     public async Task Admin_does_not_affect_regular_users()
     {
-        var carol = new NotesController(_ctx, new NoteExporter(_ctx, _db.Clock, Options.Create(new ExportOptions())))
+        var carol = new NotesController(_ctx, new NoteExporter(_ctx, _db.Clock, Options.Create(new ExportOptions())), new Import.NoteImporter(_ctx, _db.Clock, Options.Create(new Import.ImportOptions())))
         {
             ControllerContext = TestPrincipals.ControllerContext(TestPrincipals.For(3)),
         };
