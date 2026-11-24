@@ -28,6 +28,10 @@ public sealed class SmtpEmailSender(IOptions<DigestOptions> options) : IEmailSen
             await client.AuthenticateAsync(smtp.Username, smtp.Password, ct);
         }
 
+        // TODO: Address SMTP disconnect/reconnect checkpoints that can cause duplicate messages. If the connection drops
+        // (or DisconnectAsync fails) after the server has accepted the message, this throws, the digest claim is released
+        // and the next pass resends the same digest. Consider recording a sent checkpoint (e.g. Message-Id) after SendAsync
+        // succeeds and treating disconnect failures as delivered.
         await client.SendAsync(ToMimeMessage(message, options.Value.From), ct);
         await client.DisconnectAsync(quit: true, ct);
     }
