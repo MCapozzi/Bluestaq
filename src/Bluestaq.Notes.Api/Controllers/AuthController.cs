@@ -38,8 +38,19 @@ public sealed class AuthController(
     public async Task<IActionResult> Register(RegisterRequest request, CancellationToken ct)
     {
         var username = NormalizeUsername(request.Username);
+        if (Request.Cookies.ContainsKey(sessionOptions.Value.CookieName))
+        {
+            SessionCookie.Delete(HttpContext, sessionOptions.Value);
+        }
+
         try
         {
+            // Registering ends the caller's current session, so they must log in to get a fresh session ID.
+            if (User.Identity?.IsAuthenticated == true)
+            {
+                await sessions.RevokeAsync(User.GetSessionId(), ct);
+            }
+
             if (await db.Users.AnyAsync(u => u.Username == username, ct))
             {
                 return UsernameTaken();

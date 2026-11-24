@@ -96,6 +96,21 @@ public sealed class AuthControllerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Register_ends_the_callers_session_and_clears_its_cookie()
+    {
+        var alice = await RegisterAsync("alice");
+        var session = (SessionResponse)((OkObjectResult)await Controller().Login(new LoginRequest("alice", Password), default)).Value!;
+        var sessionId = (await _ctx.Sessions.AsNoTracking().SingleAsync()).Id;
+        var controller = Controller(user: TestPrincipals.For(alice.Id, sessionId));
+        controller.HttpContext.Request.Headers.Cookie = $"{_options.CookieName}={session.Token}";
+
+        Assert.IsType<CreatedAtActionResult>(await controller.Register(new RegisterRequest("bob", Password), default));
+
+        Assert.False(await _ctx.Sessions.AnyAsync());
+        Assert.Contains($"{_options.CookieName}=;", controller.HttpContext.Response.Headers.SetCookie.ToString());
+    }
+
+    [Fact]
     public async Task Register_duplicate_username_is_409()
     {
         await RegisterAsync("alice");

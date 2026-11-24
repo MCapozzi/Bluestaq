@@ -122,6 +122,17 @@ public sealed class AuthTests(NotesApiFactory factory)
     }
 
     [Fact]
+    public async Task Register_ends_the_callers_session()
+    {
+        var (client, _) = await ApiClient.CreateAuthenticatedClientAsync(factory);
+
+        var register = await client.PostAsJsonAsync("/api/auth/register", new RegisterRequest(ApiClient.UniqueUsername(), ApiClient.DefaultPassword));
+
+        Assert.Equal(HttpStatusCode.Created, register.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/auth/me")).StatusCode);
+    }
+
+    [Fact]
     public async Task Logout_revokes_the_session()
     {
         var (client, _) = await ApiClient.CreateAuthenticatedClientAsync(factory);

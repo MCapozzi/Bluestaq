@@ -15,6 +15,7 @@ public sealed class RegistrationFailureTests(NotesApiFactory factory)
     public async Task Database_errors_alert_online_admins_and_point_to_support_after_repeated_failures()
     {
         var client = factory.CreateClient();
+        var anonymous = factory.CreateClient(); // registering would end the admin's session if sent with its cookie
         var login = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(NotesApiFactory.AdminUsername, NotesApiFactory.AdminPassword));
         var admin = (await login.Content.ReadFromJsonAsync<SessionResponse>())!;
         var ws = factory.Server.CreateWebSocketClient();
@@ -38,7 +39,7 @@ public sealed class RegistrationFailureTests(NotesApiFactory factory)
             var titles = new List<string>();
             for (var i = 0; i < 3; i++)
             {
-                var response = await client.PostAsJsonAsync("/api/auth/register", new RegisterRequest($"regfail{i}", "a-strong-password"));
+                var response = await anonymous.PostAsJsonAsync("/api/auth/register", new RegisterRequest($"regfail{i}", "a-strong-password"));
                 Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
                 titles.Add((await response.Content.ReadFromJsonAsync<ProblemDetails>())!.Title!);
             }
@@ -65,7 +66,7 @@ public sealed class RegistrationFailureTests(NotesApiFactory factory)
             await db.Database.ExecuteSqlRawAsync("DROP TRIGGER IF EXISTS fail_registrations");
         }
 
-        var ok = await client.PostAsJsonAsync("/api/auth/register", new RegisterRequest("regfail-recovered", "a-strong-password"));
+        var ok = await anonymous.PostAsJsonAsync("/api/auth/register", new RegisterRequest("regfail-recovered", "a-strong-password"));
         Assert.Equal(HttpStatusCode.Created, ok.StatusCode);
     }
 
