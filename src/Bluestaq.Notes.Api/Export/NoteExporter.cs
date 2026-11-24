@@ -1,25 +1,30 @@
 using Bluestaq.Notes.Api.Contracts;
 using Bluestaq.Notes.Api.Data;
+using Bluestaq.Notes.Api.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace Bluestaq.Notes.Api.Export;
 
-/// <summary>Resolves a <see cref="NoteExportRequest"/> into the requesting user's matching notes.</summary>
+/// <summary>Resolves a <see cref="NoteExportRequest"/> into the matching notes the requester is allowed to read.</summary>
 public sealed class NoteExporter(NotesDbContext db, TimeProvider clock)
 {
     /// <remarks>
-    /// Only the requester's own notes are ever returned. IDs that don't exist or belong to another user
-    /// are reported together in <see cref="NoteExportResponse.NotFoundIds"/> so ownership isn't disclosed.
+    /// Only notes readable by the requester (own, public, or shared with them) are ever returned. Requested IDs that
+    /// don't exist or aren't readable are reported together in <see cref="NoteExportResponse.NotFoundIds"/>.
     /// </remarks>
     public async Task<NoteExportResponse> ExportAsync(long requesterId, NoteExportRequest request, CancellationToken ct)
     {
-        var query = db.Notes.AsNoTracking().Where(n => n.OwnerId == requesterId);
+        var query = db.Notes.AsNoTracking().ReadableBy(requesterId);
         long[] requestedIds = [];
 
         if (request.NoteIds is not null)
         {
             requestedIds = request.NoteIds.Distinct().ToArray();
             query = query.Where(n => requestedIds.Contains(n.Id));
+        }
+        else if (request.UserId is { } ownerId)
+        {
+            query = query.Where(n => n.OwnerId == ownerId);
         }
         else if (request.From is { } from && request.To is { } to)
         {

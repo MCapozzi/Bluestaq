@@ -18,11 +18,20 @@ public sealed record NoteResponse(
     long CreatedByUserId,
     DateTime CreatedAt,
     long UpdatedByUserId,
-    DateTime UpdatedAt)
+    DateTime UpdatedAt,
+    NoteVisibility Visibility = NoteVisibility.Private)
 {
     public static NoteResponse From(Note note) =>
         new(note.Id, note.OwnerId, note.Title, note.Content,
-            note.CreatedByUserId, note.CreatedAt, note.UpdatedByUserId, note.UpdatedAt);
+            note.CreatedByUserId, note.CreatedAt, note.UpdatedByUserId, note.UpdatedAt, note.Visibility);
 }
+
+public sealed record SetVisibilityRequest([Required] NoteVisibility? Visibility);
+
+public sealed record ShareNoteRequest([Required(AllowEmptyStrings = false)] string Username);
+
+public sealed record NoteShareResponse(long UserId, string Username, DateTime SharedAt);
+
+public sealed record NoteSharingResponse(long NoteId, NoteVisibility Visibility, IReadOnlyList<NoteShareResponse> SharedWith);
 
 public sealed record PagedResponse<T>(IReadOnlyList<T> Items, int Page, int PageSize, int TotalCount);

@@ -47,7 +47,7 @@ public sealed class ExportAndAuditTests(NotesApiFactory factory)
     }
 
     [Fact]
-    public async Task Export_by_user_id_returns_all_own_notes_and_forbids_others()
+    public async Task Export_by_user_id_returns_all_own_notes_and_only_readable_notes_of_others()
     {
         var (alice, aliceSession) = await ApiClient.CreateAuthenticatedClientAsync(factory);
         var (_, bobSession) = await ApiClient.CreateAuthenticatedClientAsync(factory);
@@ -59,8 +59,8 @@ public sealed class ExportAndAuditTests(NotesApiFactory factory)
         Assert.Equal(2, export.Count);
         Assert.All(export.Notes, n => Assert.Equal(aliceSession.User.Id, n.OwnerId));
 
-        var forbidden = await alice.PostAsJsonAsync("/api/notes/export", new NoteExportRequest(UserId: bobSession.User.Id));
-        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        var bobsPrivate = await ExportAsync(alice, new NoteExportRequest(UserId: bobSession.User.Id));
+        Assert.Empty(bobsPrivate.Notes);
     }
 
     [Fact]
@@ -70,7 +70,8 @@ public sealed class ExportAndAuditTests(NotesApiFactory factory)
         var note = await CreateAsync(client, "in range");
 
         var inRange = await ExportAsync(client, new NoteExportRequest(From: note.CreatedAt.AddMinutes(-1), To: note.CreatedAt.AddMinutes(1)));
-        Assert.Equal(note.Id, Assert.Single(inRange.Notes).Id);
+        // Other tests' public notes may also fall in range; only this user's notes are deterministic.
+        Assert.Equal(note.Id, Assert.Single(inRange.Notes, n => n.OwnerId == note.OwnerId).Id);
 
         var before = await ExportAsync(client, new NoteExportRequest(From: note.CreatedAt.AddDays(-2), To: note.CreatedAt.AddDays(-1)));
         Assert.Empty(before.Notes);
@@ -87,7 +88,7 @@ public sealed class ExportAndAuditTests(NotesApiFactory factory)
         Assert.Equal("text/csv", response.Content.Headers.ContentType!.MediaType);
         Assert.StartsWith("notes-export-", response.Content.Headers.ContentDisposition!.FileName!.Trim('"'));
         var body = await response.Content.ReadAsStringAsync();
-        Assert.StartsWith("Id,OwnerId,Title,Content,CreatedByUserId,CreatedAt,UpdatedByUserId,UpdatedAt\r\n", body);
+        Assert.StartsWith("Id,OwnerId,Title,Content,CreatedByUserId,CreatedAt,UpdatedByUserId,UpdatedAt,Visibility\r\n", body);
         Assert.Contains("\"Hello, \"\"world\"\"\"", body);
     }
 

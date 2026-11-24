@@ -10,8 +10,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Bluestaq.Notes.Api.Controllers;
 
 /// <summary>
-/// CRUD for the authenticated user's notes. Notes owned by other users are reported as 404
-/// so their existence is not disclosed.
+/// Notes CRUD. Callers can read their own, public, and shared-with-them notes; only owners can modify them.
+/// Notes the caller can't read are reported as 404 so their existence is not disclosed.
 /// </summary>
 [ApiController]
 [Route("api/notes")]
@@ -31,7 +31,29 @@ public sealed class NotesController(NotesDbContext db, NoteExporter exporter) : 
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(n => new NoteResponse(
-                n.Id, n.OwnerId, n.Title, n.Content, n.CreatedByUserId, n.CreatedAt, n.UpdatedByUserId, n.UpdatedAt))
+                n.Id, n.OwnerId, n.Title, n.Content, n.CreatedByUserId, n.CreatedAt, n.UpdatedByUserId, n.UpdatedAt, n.Visibility))
+            .ToListAsync(ct);
+
+        return Ok(new PagedResponse<NoteResponse>(items, page, pageSize, total));
+    }
+
+    /// <summary>Other users' notes the caller can read: shared with them directly, or public.</summary>
+    [HttpGet("shared")]
+    [ProducesResponseType<PagedResponse<NoteResponse>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ListShared(
+        [FromQuery, Range(1, int.MaxValue)] int page = 1,
+        [FromQuery, Range(1, ValidationLimits.MaxPageSize)] int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        var userId = User.GetUserId();
+        var query = db.Notes.AsNoTracking().ReadableBy(userId).Where(n => n.OwnerId != userId);
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .OrderByDescending(n => n.UpdatedAt).ThenByDescending(n => n.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(n => new NoteResponse(
+                n.Id, n.OwnerId, n.Title, n.Content, n.CreatedByUserId, n.CreatedAt, n.UpdatedByUserId, n.UpdatedAt, n.Visibility))
             .ToListAsync(ct);
 
         return Ok(new PagedResponse<NoteResponse>(items, page, pageSize, total));
@@ -42,7 +64,7 @@ public sealed class NotesController(NotesDbContext db, NoteExporter exporter) : 
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(long id, CancellationToken ct)
     {
-        var note = await OwnedNotes().AsNoTracking().SingleOrDefaultAsync(n => n.Id == id, ct);
+        var note = await db.Notes.AsNoTracking().ReadableBy(User.GetUserId()).SingleOrDefaultAsync(n => n.Id == id, ct);
         return note is null ? NotFound() : Ok(NoteResponse.From(note));
     }
 
@@ -65,13 +87,14 @@ public sealed class NotesController(NotesDbContext db, NoteExporter exporter) : 
 
     [HttpPut("{id:long}")]
     [ProducesResponseType<NoteResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(long id, NoteRequest request, CancellationToken ct)
     {
-        var note = await OwnedNotes().SingleOrDefaultAsync(n => n.Id == id, ct);
+        var (note, error) = await NoteAccessGuard.FindOwnedAsync(this, db, id, ct);
         if (note is null)
         {
-            return NotFound();
+            return error!;
         }
 
         note.Title = request.Title;
@@ -88,30 +111,30 @@ public sealed class NotesController(NotesDbContext db, NoteExporter exporter) : 
 
     [HttpDelete("{id:long}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(long id, CancellationToken ct)
     {
         var deleted = await OwnedNotes().Where(n => n.Id == id).ExecuteDeleteAsync(ct);
-        return deleted == 0 ? NotFound() : NoContent();
+        if (deleted > 0)
+        {
+            return NoContent();
+        }
+
+        var (_, error) = await NoteAccessGuard.FindOwnedAsync(this, db, id, ct);
+        return error ?? NotFound();
     }
 
     /// <summary>
-    /// Bulk-exports the caller's notes selected by exactly one of: <c>noteIds</c>, <c>userId</c>, or a
+    /// Bulk-exports notes the caller can read, selected by exactly one of: <c>noteIds</c>, <c>userId</c>, or a
     /// <c>from</c>/<c>to</c> creation-date range. Returns JSON, or a CSV file when <c>format</c> is <c>csv</c>.
     /// </summary>
     [HttpPost("export")]
     [ProducesResponseType<NoteExportResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK, "text/csv")]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> Export(NoteExportRequest request, CancellationToken ct)
     {
-        var requesterId = User.GetUserId();
-        if (request.UserId is { } userId && userId != requesterId)
-        {
-            return Problem(statusCode: StatusCodes.Status403Forbidden, title: "You can only export your own notes.");
-        }
-
-        var export = await exporter.ExportAsync(requesterId, request, ct);
+        var export = await exporter.ExportAsync(User.GetUserId(), request, ct);
         if (request.Format == ExportFormat.Csv)
         {
             var csv = System.Text.Encoding.UTF8.GetBytes(NoteCsvWriter.Write(export.Notes));

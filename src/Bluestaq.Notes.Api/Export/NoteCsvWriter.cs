@@ -7,7 +7,7 @@ namespace Bluestaq.Notes.Api.Export;
 /// <summary>Writes notes as RFC 4180 CSV.</summary>
 public static class NoteCsvWriter
 {
-    public const string Header = "Id,OwnerId,Title,Content,CreatedByUserId,CreatedAt,UpdatedByUserId,UpdatedAt";
+    public const string Header = "Id,OwnerId,Title,Content,CreatedByUserId,CreatedAt,UpdatedByUserId,UpdatedAt,Visibility";
 
     public static string Write(IEnumerable<NoteResponse> notes)
     {
@@ -21,7 +21,8 @@ public static class NoteCsvWriter
               .Append(n.CreatedByUserId.ToString(CultureInfo.InvariantCulture)).Append(',')
               .Append(n.CreatedAt.ToString("O", CultureInfo.InvariantCulture)).Append(',')
               .Append(n.UpdatedByUserId.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(n.UpdatedAt.ToString("O", CultureInfo.InvariantCulture)).Append("\r\n");
+              .Append(n.UpdatedAt.ToString("O", CultureInfo.InvariantCulture)).Append(',')
+              .Append(n.Visibility.ToString()).Append("\r\n");
         }
 
         return sb.ToString();

@@ -150,12 +150,69 @@ public sealed class NotesControllerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Export_for_another_user_is_403()
+    public async Task Export_for_another_user_returns_only_their_notes_the_caller_can_read()
     {
-        await _db.AddNoteAsync(_bobId);
+        await _db.AddNoteAsync(_bobId, "private");
+        var shared = await ShareAsync(await _db.AddNoteAsync(_bobId, "shared"), _aliceId);
+        var pub = await MakePublicAsync(await _db.AddNoteAsync(_bobId, "public"));
 
-        var result = Assert.IsType<ObjectResult>(await ControllerFor(_aliceId).Export(new NoteExportRequest(UserId: _bobId), default));
-        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
-        Assert.IsType<ProblemDetails>(result.Value);
+        var ok = Assert.IsType<OkObjectResult>(await ControllerFor(_aliceId).Export(new NoteExportRequest(UserId: _bobId), default));
+        Assert.Equal([shared.Id, pub.Id], Assert.IsType<NoteExportResponse>(ok.Value).Notes.Select(n => n.Id));
+    }
+
+    [Fact]
+    public async Task Shared_and_public_notes_are_readable_but_not_writable_by_others()
+    {
+        var shared = await ShareAsync(await _db.AddNoteAsync(_bobId, "shared"), _aliceId);
+        var pub = await MakePublicAsync(await _db.AddNoteAsync(_bobId, "public"));
+        var priv = await _db.AddNoteAsync(_bobId, "private");
+        var alice = ControllerFor(_aliceId);
+
+        Assert.IsType<OkObjectResult>(await alice.Get(shared.Id, default));
+        var publicNote = Assert.IsType<NoteResponse>(Assert.IsType<OkObjectResult>(await alice.Get(pub.Id, default)).Value);
+        Assert.Equal(Domain.NoteVisibility.Public, publicNote.Visibility);
+        Assert.IsType<NotFoundResult>(await alice.Get(priv.Id, default));
+
+        foreach (var id in new[] { shared.Id, pub.Id })
+        {
+            Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(await alice.Update(id, new NoteRequest("x", "y"), default)).StatusCode);
+            Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(await alice.Delete(id, default)).StatusCode);
+        }
+        Assert.IsType<NotFoundResult>(await alice.Update(priv.Id, new NoteRequest("x", "y"), default));
+        Assert.IsType<NotFoundResult>(await alice.Delete(priv.Id, default));
+    }
+
+    [Fact]
+    public async Task ListShared_returns_other_users_readable_notes_only()
+    {
+        await _db.AddNoteAsync(_aliceId, "mine");
+        await _db.AddNoteAsync(_bobId, "private");
+        var shared = await ShareAsync(await _db.AddNoteAsync(_bobId, "shared"), _aliceId);
+        _db.Clock.Advance(TimeSpan.FromSeconds(1));
+        var pub = await MakePublicAsync(await _db.AddNoteAsync(_bobId, "public"));
+
+        var page = (PagedResponse<NoteResponse>)((OkObjectResult)await ControllerFor(_aliceId).ListShared()).Value!;
+        Assert.Equal(2, page.TotalCount);
+        Assert.Equal([pub.Id, shared.Id], page.Items.Select(n => n.Id));
+    }
+
+    private async Task<Domain.Note> ShareAsync(Domain.Note note, long userId)
+    {
+        await using var ctx = _db.CreateContext();
+        ctx.NoteShares.Add(new Domain.NoteShare { NoteId = note.Id, UserId = userId, SharedAt = TestDb.Start.UtcDateTime });
+        await ctx.SaveChangesAsync();
+        return note;
+    }
+
+    private async Task<Domain.Note> MakePublicAsync(Domain.Note note)
+    {
+        var previous = _db.CurrentUser.UserId;
+        _db.CurrentUser.UserId = note.OwnerId;
+        await using var ctx = _db.CreateContext();
+        var tracked = await ctx.Notes.SingleAsync(n => n.Id == note.Id);
+        tracked.Visibility = Domain.NoteVisibility.Public;
+        await ctx.SaveChangesAsync();
+        _db.CurrentUser.UserId = previous;
+        return tracked;
     }
 }

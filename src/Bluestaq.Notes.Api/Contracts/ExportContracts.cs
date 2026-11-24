@@ -13,7 +13,8 @@ public enum ExportFormat
 
 /// <summary>
 /// Selects notes to export. Exactly one selector must be given: <see cref="NoteIds"/>, <see cref="UserId"/>,
-/// or the <see cref="From"/>/<see cref="To"/> creation-date range (inclusive, UTC).
+/// or the <see cref="From"/>/<see cref="To"/> creation-date range (inclusive, UTC). Results are limited to notes
+/// the caller can read.
 /// </summary>
 public sealed record NoteExportRequest(
     long[]? NoteIds = null,

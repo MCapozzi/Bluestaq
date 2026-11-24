@@ -75,11 +75,16 @@ All endpoints except `register`, `login` and `/health` require a valid session. 
 | POST | `/api/auth/logout` | Revoke the current session | 204 |
 | GET | `/api/auth/me` | Current user | 200 |
 | GET | `/api/notes?page=1&pageSize=20` | List own notes, newest first (`pageSize` ≤ 100) | 200 |
-| GET | `/api/notes/{id}` | Get a note | 200 |
+| GET | `/api/notes/shared?page=1&pageSize=20` | Other users' notes you can read (shared with you or public) | 200 |
+| GET | `/api/notes/{id}` | Get a note you can read | 200 |
 | POST | `/api/notes` | Create `{ title, content }` | 201 |
 | PUT | `/api/notes/{id}` | Replace `{ title, content }` | 200 |
 | DELETE | `/api/notes/{id}` | Delete a note | 204 |
-| POST | `/api/notes/export` | Bulk export own notes (see below) | 200 |
+| POST | `/api/notes/export` | Bulk export notes you can read (see below) | 200 |
+| GET | `/api/notes/{id}/sharing` | Visibility and share list (owner only) | 200 |
+| PUT | `/api/notes/{id}/visibility` | `{ "visibility": "public" \| "private" }` (owner only) | 200 |
+| POST | `/api/notes/{id}/shares` | Share with a user `{ username }`; idempotent (owner only) | 200 |
+| DELETE | `/api/notes/{id}/shares/{username}` | Revoke a user's access; idempotent (owner only) | 200 |
 
 Validation: username 3–50 chars of `[A-Za-z0-9_.-]` (case-insensitive, stored lowercase); password 8–128 chars;
 title 1–200 chars; content up to 100,000 chars.
@@ -91,15 +96,22 @@ EF Core `SaveChangesInterceptor` (`AuditInterceptor`) from the authenticated use
 and update, so clients can't set or forge them, and `created*` can never change after insert. All note responses
 include them, along with `ownerId`.
 
+### Sharing
+
+Each note has a `visibility` (`private` by default, or `public`) and a list of users it is shared with
+(`note_shares`). A user can **read** a note if they own it, it is public, or it is shared with them. Only the owner can
+update, delete, or change sharing; a user who can read a note but doesn't own it gets **403** for those, and a user who
+can't read it gets **404**. Deleting a note or user removes its shares.
+
 ### Bulk export
 
 `POST /api/notes/export` takes exactly one selector:
 
 | Body | Exports |
 | --- | --- |
-| `{ "noteIds": [1, 2, 3] }` | Those notes (up to 1,000 IDs). IDs that don't exist or aren't yours are listed in `notFoundIds`. |
-| `{ "userId": 42 }` | All notes owned by user 42. Must be your own ID, otherwise **403**. |
-| `{ "from": "2026-01-01T00:00:00Z", "to": "2026-01-31T23:59:59Z" }` | Your notes created in that range (inclusive; timestamps without an offset are UTC). |
+| `{ "noteIds": [1, 2, 3] }` | Those notes (up to 1,000 IDs). IDs that don't exist or you can't read are listed in `notFoundIds`. |
+| `{ "userId": 42 }` | Notes owned by user 42 that you can read (all of them if 42 is you). |
+| `{ "from": "2026-01-01T00:00:00Z", "to": "2026-01-31T23:59:59Z" }` | Notes you can read created in that range (inclusive; timestamps without an offset are UTC). |
 
 Add `"format": "csv"` to get a `text/csv` download (`notes-export-<timestamp>.csv`) instead of JSON
 `{ exportedAt, count, notes, notFoundIds }`. CSV cells starting with `= + - @` are prefixed with `'` to prevent
@@ -126,8 +138,8 @@ curl -s localhost:8080/api/notes -H "Authorization: Bearer $TOKEN"
 - A custom authentication handler (`SessionAuthenticationHandler`) resolves the token to an unexpired session on every
   request and slides its expiry forward. A global fallback policy requires an authenticated user on every endpoint.
 - **Logout** deletes the session row, so the token stops working immediately.
-- Notes are always queried scoped to the caller's user id. Another user's note returns **404**, not 403, so note ids
-  can't be probed.
+- Notes are always queried through `ReadableBy(userId)` (own, public, or shared). A note you can't read returns
+  **404**, not 403, so note ids can't be probed.
 - `login` and `register` are rate limited per client IP to slow password guessing.
 
 ## Project layout
@@ -161,7 +173,7 @@ dotnet test tests/Bluestaq.Notes.Api.UnitTests /p:CollectCoverage=true
 
 ## Possible next steps
 
-- Sharing/collaboration: a `note_shares` table (note, user, permission) and endpoints to grant/revoke access.
+- Edit permission for shared users (currently shares are read-only).
 - Optimistic concurrency (`ETag`/`If-Match`) for simultaneous edits.
 - Per-account lockout, and a background job to purge expired sessions.
 - An admin role that may export other users' notes.

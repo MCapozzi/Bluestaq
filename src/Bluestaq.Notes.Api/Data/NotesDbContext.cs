@@ -9,6 +9,7 @@ public sealed class NotesDbContext(DbContextOptions<NotesDbContext> options) : D
     public DbSet<User> Users => Set<User>();
     public DbSet<Note> Notes => Set<Note>();
     public DbSet<Session> Sessions => Set<Session>();
+    public DbSet<NoteShare> NoteShares => Set<NoteShare>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -34,6 +35,16 @@ public sealed class NotesDbContext(DbContextOptions<NotesDbContext> options) : D
             e.HasOne(n => n.Owner).WithMany(u => u.Notes).HasForeignKey(n => n.OwnerId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(n => new { n.OwnerId, n.UpdatedAt });
             e.HasIndex(n => new { n.OwnerId, n.CreatedAt });
+            e.HasIndex(n => n.Visibility);
+        });
+
+        modelBuilder.Entity<NoteShare>(e =>
+        {
+            e.ToTable("note_shares");
+            e.HasKey(s => new { s.NoteId, s.UserId });
+            e.HasOne(s => s.Note).WithMany(n => n.Shares).HasForeignKey(s => s.NoteId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(s => s.UserId);
         });
 
         modelBuilder.Entity<Session>(e =>

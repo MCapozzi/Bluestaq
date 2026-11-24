@@ -1,0 +1,32 @@
+using System.Text.Json.Serialization;
+
+namespace Bluestaq.Notes.Api.Domain;
+
+[JsonConverter(typeof(JsonStringEnumConverter<NoteVisibility>))]
+public enum NoteVisibility
+{
+    /// <summary>Only the owner and users the note is explicitly shared with.</summary>
+    Private = 0,
+
+    /// <summary>Any authenticated user.</summary>
+    Public = 1,
+}
+
+/// <summary>Grants a specific user read access to a note.</summary>
+public sealed class NoteShare
+{
+    public long NoteId { get; set; }
+    public Note? Note { get; set; }
+    public long UserId { get; set; }
+    public User? User { get; set; }
+    public DateTime SharedAt { get; set; }
+}
+
+public static class NoteAccess
+{
+    /// <summary>Notes the user may read: their own, public notes, and notes shared with them.</summary>
+    public static IQueryable<Note> ReadableBy(this IQueryable<Note> notes, long userId) =>
+        notes.Where(n => n.OwnerId == userId
+            || n.Visibility == NoteVisibility.Public
+            || n.Shares.Any(s => s.UserId == userId));
+}

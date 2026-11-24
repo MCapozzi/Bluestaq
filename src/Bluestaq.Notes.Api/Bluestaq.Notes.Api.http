@@ -52,7 +52,7 @@ Content-Type: application/json
 
 { "noteIds": [1, 2, 3] }
 
-### Export all of a user's notes (must be your own user ID)
+### Export all of a user's notes you can read
 POST {{host}}/api/notes/export
 Authorization: Bearer {{token}}
 Content-Type: application/json
@@ -65,6 +65,32 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 
 { "from": "2026-01-01T00:00:00Z", "to": "2026-12-31T23:59:59Z", "format": "csv" }
+
+### Make a note public
+PUT {{host}}/api/notes/1/visibility
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "visibility": "public" }
+
+### Share a note with a user
+POST {{host}}/api/notes/1/shares
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "username": "bob" }
+
+### See who a note is shared with
+GET {{host}}/api/notes/1/sharing
+Authorization: Bearer {{token}}
+
+### Revoke a user's access
+DELETE {{host}}/api/notes/1/shares/bob
+Authorization: Bearer {{token}}
+
+### Notes shared with me (or public)
+GET {{host}}/api/notes/shared
+Authorization: Bearer {{token}}
 
 ### Logout
 POST {{host}}/api/auth/logout

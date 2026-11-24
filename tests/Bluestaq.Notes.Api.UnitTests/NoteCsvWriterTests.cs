@@ -20,7 +20,7 @@ public sealed class NoteCsvWriterTests
         var lines = NoteCsvWriter.Write([note, note with { Id = 8 }]).Split("\r\n");
 
         Assert.Equal(4, lines.Length);
-        Assert.Equal("7,3,Title,\"a,b\",3,2026-01-02T03:04:05.0000000Z,4,2026-01-02T04:04:05.0000000Z", lines[1]);
+        Assert.Equal("7,3,Title,\"a,b\",3,2026-01-02T03:04:05.0000000Z,4,2026-01-02T04:04:05.0000000Z,Private", lines[1]);
         Assert.StartsWith("8,", lines[2]);
         Assert.Equal("", lines[3]);
     }

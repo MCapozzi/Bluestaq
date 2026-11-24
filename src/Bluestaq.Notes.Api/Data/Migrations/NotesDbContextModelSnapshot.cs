@@ -49,13 +49,36 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                     b.Property<long>("UpdatedByUserId")
                         .HasColumnType("bigint");
 
+                    b.Property<int>("Visibility")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("Visibility");
 
                     b.HasIndex("OwnerId", "CreatedAt");
 
                     b.HasIndex("OwnerId", "UpdatedAt");
 
                     b.ToTable("notes", (string)null);
+                });
+
+            modelBuilder.Entity("Bluestaq.Notes.Api.Domain.NoteShare", b =>
+                {
+                    b.Property<long>("NoteId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("SharedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("NoteId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("note_shares", (string)null);
                 });
 
             modelBuilder.Entity("Bluestaq.Notes.Api.Domain.Session", b =>
@@ -132,6 +155,25 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                     b.Navigation("Owner");
                 });
 
+            modelBuilder.Entity("Bluestaq.Notes.Api.Domain.NoteShare", b =>
+                {
+                    b.HasOne("Bluestaq.Notes.Api.Domain.Note", "Note")
+                        .WithMany("Shares")
+                        .HasForeignKey("NoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Bluestaq.Notes.Api.Domain.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Note");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Bluestaq.Notes.Api.Domain.Session", b =>
                 {
                     b.HasOne("Bluestaq.Notes.Api.Domain.User", "User")
@@ -141,6 +183,11 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Bluestaq.Notes.Api.Domain.Note", b =>
+                {
+                    b.Navigation("Shares");
                 });
 
             modelBuilder.Entity("Bluestaq.Notes.Api.Domain.User", b =>
