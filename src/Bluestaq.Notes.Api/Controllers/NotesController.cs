@@ -134,7 +134,19 @@ public sealed class NotesController(NotesDbContext db, NoteExporter exporter) : 
     [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK, "text/csv")]
     public async Task<IActionResult> Export(NoteExportRequest request, CancellationToken ct)
     {
-        var export = await exporter.ExportAsync(User.GetUserId(), request, ct);
+        NoteExportResponse export;
+        try
+        {
+            export = await exporter.ExportAsync(User.GetUserId(), request, ct);
+        }
+        catch (ExportLimitExceededException ex)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Export too large.",
+                detail: $"{ex.Message} Narrow the selection (fewer IDs or a shorter date range).");
+        }
+
         if (request.Format == ExportFormat.Csv)
         {
             var csv = System.Text.Encoding.UTF8.GetBytes(NoteCsvWriter.Write(export.Notes));

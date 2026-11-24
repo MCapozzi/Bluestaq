@@ -24,6 +24,7 @@ builder.Services.AddScoped<AuditInterceptor>();
 builder.Services.AddDbContext<NotesDbContext>((sp, options) => options
     .UseMySQL(connectionString)
     .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
+builder.Services.Configure<ExportOptions>(builder.Configuration.GetSection(ExportOptions.SectionName));
 builder.Services.AddScoped<NoteExporter>();
 builder.Services.Configure<SessionAuthOptions>(builder.Configuration.GetSection(SessionAuthOptions.SectionName));
 builder.Services.AddScoped<SessionService>();

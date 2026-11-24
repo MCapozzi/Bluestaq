@@ -2,15 +2,18 @@ using Bluestaq.Notes.Api.Contracts;
 using Bluestaq.Notes.Api.Data;
 using Bluestaq.Notes.Api.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Bluestaq.Notes.Api.Export;
 
 /// <summary>Resolves a <see cref="NoteExportRequest"/> into the matching notes the requester is allowed to read.</summary>
-public sealed class NoteExporter(NotesDbContext db, TimeProvider clock)
+public sealed class NoteExporter(NotesDbContext db, TimeProvider clock, IOptions<ExportOptions> options)
 {
     /// <remarks>
     /// Only notes readable by the requester (own, public, or shared with them) are ever returned. Requested IDs that
     /// don't exist or aren't readable are reported together in <see cref="NoteExportResponse.NotFoundIds"/>.
+    /// Throws <see cref="ExportLimitExceededException"/> rather than buffering more than
+    /// <see cref="ExportOptions.MaxNotes"/> notes.
     /// </remarks>
     public async Task<NoteExportResponse> ExportAsync(long requesterId, NoteExportRequest request, CancellationToken ct)
     {
@@ -33,9 +36,15 @@ public sealed class NoteExporter(NotesDbContext db, TimeProvider clock)
             query = query.Where(n => n.CreatedAt >= fromUtc && n.CreatedAt <= toUtc);
         }
 
+        var maxNotes = options.Value.MaxNotes;
         var notes = await query
             .OrderBy(n => n.CreatedAt).ThenBy(n => n.Id)
+            .Take(maxNotes + 1)
             .ToListAsync(ct);
+        if (notes.Count > maxNotes)
+        {
+            throw new ExportLimitExceededException(maxNotes);
+        }
 
         var found = notes.Select(n => n.Id).ToHashSet();
         var notFound = requestedIds.Where(id => !found.Contains(id)).ToList();

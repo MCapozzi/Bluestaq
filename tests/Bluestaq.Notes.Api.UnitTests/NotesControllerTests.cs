@@ -31,7 +31,7 @@ public sealed class NotesControllerTests : IAsyncLifetime
     private NotesController ControllerFor(long userId)
     {
         _db.CurrentUser.UserId = userId;
-        return new NotesController(_ctx, new NoteExporter(_ctx, _db.Clock))
+        return new NotesController(_ctx, new NoteExporter(_ctx, _db.Clock, Microsoft.Extensions.Options.Options.Create(new ExportOptions { MaxNotes = 3 })))
         {
             ControllerContext = TestPrincipals.ControllerContext(TestPrincipals.For(userId)),
         };
@@ -214,5 +214,18 @@ public sealed class NotesControllerTests : IAsyncLifetime
         await ctx.SaveChangesAsync();
         _db.CurrentUser.UserId = previous;
         return tracked;
+    }
+
+    [Fact]
+    public async Task Export_over_the_limit_is_a_400()
+    {
+        for (var i = 0; i < 4; i++)
+        {
+            await _db.AddNoteAsync(_aliceId);
+        }
+
+        var result = Assert.IsType<ObjectResult>(await ControllerFor(_aliceId).Export(new NoteExportRequest(UserId: _aliceId), default));
+        Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+        Assert.Equal("Export too large.", Assert.IsType<ProblemDetails>(result.Value).Title);
     }
 }
