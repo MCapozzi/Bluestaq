@@ -198,7 +198,7 @@ note/user id, response status, client IP and trace id.
 | `{ "from": "2026-01-01T00:00:00Z", "to": "2026-01-31T23:59:59Z" }` | Notes you can read created in that range (inclusive; timestamps without an offset are UTC). |
 
 Add `"format": "csv"` to get a `text/csv` download (`notes-export-<timestamp>.csv`) instead of JSON
-`{ exportedAt, count, notes, notFoundIds }`. CSV cells starting with `= + - @` are prefixed with `'` to prevent
+`{ exportedAt, count, notes, notFoundIds }`. CSV cells starting with `= + - @` (or `'`) are prefixed with `'` to prevent
 spreadsheet formula injection. Supplying zero or more than one selector, or an incomplete/inverted range, returns 400. A selection matching more than
 `Export:MaxNotes` notes (default 10,000) is rejected with 400 rather than buffered.
 
