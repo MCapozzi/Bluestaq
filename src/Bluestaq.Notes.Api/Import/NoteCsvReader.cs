@@ -6,6 +6,7 @@ using Bluestaq.Notes.Api.Export;
 
 namespace Bluestaq.Notes.Api.Import;
 
+// TODO: Consider migrating to JSON export/import. CSV offers simplified readability and universal standard declaration; json offers expandability and partial package delivery.
 /// <summary>
 /// Reads the RFC 4180 CSV written by <see cref="NoteCsvWriter"/>. Columns are matched by header name
 /// (case-insensitive); <c>Title</c> and <c>Content</c> are required, <c>Id</c> and <c>Visibility</c> are optional, and

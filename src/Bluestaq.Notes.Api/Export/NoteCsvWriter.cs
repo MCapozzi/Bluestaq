@@ -4,6 +4,7 @@ using Bluestaq.Notes.Api.Contracts;
 
 namespace Bluestaq.Notes.Api.Export;
 
+// TODO: Consider migrating to JSON export/import. CSV offers simplified readability and universal standard declaration; json offers expandability and partial package delivery.
 /// <summary>Writes notes as RFC 4180 CSV.</summary>
 public static class NoteCsvWriter
 {
