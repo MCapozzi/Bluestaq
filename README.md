@@ -61,6 +61,10 @@ has ready-made requests for every endpoint.
 | `Sessions:CookieName` | `notes_session` | Name of the session cookie |
 | `RateLimiting:Auth:PermitLimit` | `10` | Login/register requests allowed per client IP per window |
 | `RateLimiting:Auth:Window` | `00:01:00` | Rate-limit window; excess requests get 429 |
+| `Database:Password` | _(none)_ | If set, overrides the password in `ConnectionStrings:Notes` (safe for any characters) |
+| `Admin:BootstrapUsername` / `Admin:BootstrapPassword` | _(empty)_ | Create (or promote) this administrator at startup |
+| `AdminAudit:LogFilePath` | `logs/admin-audit-.log` | Admin audit JSON-lines file, rolled daily (date inserted before `.log`) |
+| `AdminAudit:RetainedFileCount` | `90` | Number of daily admin audit files kept |
 
 Use environment variables in containers, e.g. `ConnectionStrings__Notes=...`.
 
@@ -85,6 +89,10 @@ All endpoints except `register`, `login` and `/health` require a valid session. 
 | PUT | `/api/notes/{id}/visibility` | `{ "visibility": "public" \| "private" }` (owner only) | 200 |
 | POST | `/api/notes/{id}/shares` | Share with a user `{ username }`; idempotent (owner only) | 200 |
 | DELETE | `/api/notes/{id}/shares/{username}` | Revoke a user's access; idempotent (owner only) | 200 |
+| GET | `/api/admin/users` | All users with their roles (admin only) | 200 |
+| PUT | `/api/admin/users/{id}/role` | `{ "role": "Administrator" \| "User" }`; can't change your own role (admin only) | 200 |
+| GET | `/api/admin/notes?userId=&page=&pageSize=` | All notes, optionally for one owner (admin only) | 200 |
+| GET | `/api/admin/audit-log?adminUserId=&noteId=&page=&pageSize=` | Admin action log, newest first (admin only) | 200 |
 
 Validation: username 3–50 chars of `[A-Za-z0-9_.-]` (case-insensitive, stored lowercase); password 8–128 chars;
 title 1–200 chars; content up to 100,000 chars.
@@ -102,6 +110,26 @@ Each note has a `visibility` (`private` by default, or `public`) and a list of u
 (`note_shares`). A user can **read** a note if they own it, it is public, or it is shared with them. Only the owner can
 update, delete, or change sharing; a user who can read a note but doesn't own it gets **403** for those, and a user who
 can't read it gets **404**. Deleting a note or user removes its shares.
+
+### Administrators
+
+Users have a `role`: `User` (default) or `Administrator`. Registration always creates `User`s. The first administrator
+comes from `Admin:BootstrapUsername`/`Admin:BootstrapPassword` at startup (created if missing, promoted if it exists;
+an existing password is never changed); after that, administrators promote or demote others via `/api/admin`. A role
+change takes effect on the user's next request.
+
+Administrators can read, update, delete, export and change sharing on **any** note through the normal `/api/notes`
+endpoints, regardless of owner, visibility or shares.
+
+Every request made by an administrator, including reads, failed requests and their login, is recorded in two places,
+separate from the application logs:
+
+- the `admin_audit_log` table (no foreign keys, so entries outlive deleted users and notes), queryable via
+  `GET /api/admin/audit-log`;
+- a JSON-lines file (`AdminAudit:LogFilePath`, rolled daily). In the containers it is `/var/log/bluestaq`, a named volume.
+
+Each entry has the admin's id and username, time, action (`Controller.Action`), HTTP method, path and query, target
+note/user id, response status, client IP and trace id.
 
 ### Bulk export
 
@@ -139,7 +167,8 @@ curl -s localhost:8080/api/notes -H "Authorization: Bearer $TOKEN"
 - A custom authentication handler (`SessionAuthenticationHandler`) resolves the token to an unexpired session on every
   request and slides its expiry forward. A global fallback policy requires an authenticated user on every endpoint.
 - **Logout** deletes the session row, so the token stops working immediately.
-- Notes are always queried through `ReadableBy(userId)` (own, public, or shared). A note you can't read returns
+- Notes are always queried through `VisibleTo(userId, isAdmin)`: everything for administrators, otherwise
+  `ReadableBy(userId)` (own, public, or shared). A note you can't read returns
   **404**, not 403, so note ids can't be probed.
 - `login` and `register` are rate limited per client IP to slow password guessing.
 
@@ -147,11 +176,12 @@ curl -s localhost:8080/api/notes -H "Authorization: Bearer $TOKEN"
 
 ```
 src/Bluestaq.Notes.Api
-  Auth/          session service, authentication handler, options
-  Controllers/   AuthController, NotesController, NoteSharingController
+  Admin/         bootstrapper, admin audit middleware, DB + file audit loggers
+  Auth/          session service, authentication handler, roles, options
+  Controllers/   AuthController, NotesController, NoteSharingController, AdminController
   Contracts/     request/response DTOs and validation limits
   Data/          NotesDbContext, AuditInterceptor and EF Core migrations
-  Domain/        User, Note, NoteShare, Session entities; NoteAccess.ReadableBy
+  Domain/        User, Note, NoteShare, Session, AdminAuditEntry entities; NoteAccess.ReadableBy
   Export/        NoteExporter (query) and NoteCsvWriter
 tests/Bluestaq.Notes.Api.UnitTests  unit tests (in-memory SQLite, fake clock), with a 70% line-coverage gate
 tests/Bluestaq.Notes.Api.Tests      integration tests (WebApplicationFactory + Testcontainers MySQL)
@@ -177,6 +207,5 @@ dotnet test tests/Bluestaq.Notes.Api.UnitTests /p:CollectCoverage=true
 - Edit permission for shared users (currently shares are read-only).
 - Optimistic concurrency (`ETag`/`If-Match`) for simultaneous edits.
 - Per-account lockout, and a background job to purge expired sessions.
-- An admin role that may export other users' notes.
 - TLS termination (reverse proxy or Kestrel certificates) for non-local deployments.
 - Search and tagging.
