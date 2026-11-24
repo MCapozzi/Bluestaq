@@ -87,6 +87,10 @@ public sealed class AlertDispatcher(
                 continue;
             }
 
+            // TODO: Add a Redis backplane (pub/sub) for multi-replica deployments. This replica only pushes to sockets
+            // connected to it, so with several replicas and no sticky sessions, a batch can be taken here while the
+            // user's sockets are on another replica, and that replica's sockets miss the push. Adding the backplane is
+            // outside the scope of the current project, but it would be completed for a production release of this system.
             var alerts = scope.ServiceProvider.GetRequiredService<AlertService>();
             var batch = await alerts.TakePendingAsync(userConnections.Key, ct);
             if (batch is null)
