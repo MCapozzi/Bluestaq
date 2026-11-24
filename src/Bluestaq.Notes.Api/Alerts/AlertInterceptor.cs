@@ -1,3 +1,4 @@
+using System.Data.Common;
 using Bluestaq.Notes.Api.Auth;
 using Bluestaq.Notes.Api.Data;
 using Bluestaq.Notes.Api.Domain;
@@ -11,7 +12,8 @@ namespace Bluestaq.Notes.Api.Alerts;
 /// Queues alerts in the same transaction as the change that causes them: a new share alerts its user, and a
 /// title/content edit alerts every user the note is shared with. The actor is never alerted about their own change.
 /// </summary>
-public sealed class AlertInterceptor(ICurrentUserAccessor currentUser, TimeProvider clock) : SaveChangesInterceptor
+public sealed class AlertInterceptor(ICurrentUserAccessor currentUser, TimeProvider clock, ILogger<AlertInterceptor> logger)
+    : SaveChangesInterceptor
 {
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
     {
@@ -28,20 +30,42 @@ public sealed class AlertInterceptor(ICurrentUserAccessor currentUser, TimeProvi
 
     public override int SavedChanges(SaveChangesCompletedEventData eventData, int result)
     {
-        PendingAlertsOfDeletedNotes(eventData.Context)?.ExecuteDelete();
+        try
+        {
+            PendingAlertsOfDeletedNotes(eventData.Context)?.ExecuteDelete();
+        }
+        catch (DbException ex)
+        {
+            LogCleanupFailure(ex);
+        }
+
         return result;
     }
 
     public override async ValueTask<int> SavedChangesAsync(
         SaveChangesCompletedEventData eventData, int result, CancellationToken cancellationToken = default)
     {
-        if (PendingAlertsOfDeletedNotes(eventData.Context) is { } pending)
+        try
         {
-            await pending.ExecuteDeleteAsync(cancellationToken);
+            if (PendingAlertsOfDeletedNotes(eventData.Context) is { } pending)
+            {
+                await pending.ExecuteDeleteAsync(cancellationToken);
+            }
+        }
+        catch (DbException ex)
+        {
+            LogCleanupFailure(ex);
         }
 
         return result;
     }
+
+    /// <summary>
+    /// The note is already deleted, so a cleanup failure must not fail the request; AlertService drops the leftover
+    /// alerts at dispatch because their note is no longer readable.
+    /// </summary>
+    private void LogCleanupFailure(DbException ex) =>
+        logger.LogWarning(ex, "Could not remove pending alerts of deleted notes; they will be dropped at dispatch");
 
     public override void SaveChangesFailed(DbContextErrorEventData eventData) => _deletedNoteIds = null;
 
