@@ -18,6 +18,9 @@ namespace Bluestaq.Notes.Api.Data.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Alerts kept for deleted notes would violate the restored foreign key.
+            migrationBuilder.Sql("DELETE FROM note_alerts WHERE NoteId NOT IN (SELECT Id FROM notes);");
+
             migrationBuilder.AddForeignKey(
                 name: "FK_note_alerts_notes_NoteId",
                 table: "note_alerts",
