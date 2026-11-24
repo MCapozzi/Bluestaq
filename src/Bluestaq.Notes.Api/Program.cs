@@ -70,7 +70,7 @@ builder.Services.AddRateLimiter(options =>
         }));
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(o => o.InputFormatters.Add(new NoteCsvInputFormatter()));
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 

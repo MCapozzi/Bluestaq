@@ -147,27 +147,6 @@ public sealed class NotesControllerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Import_csv_reads_the_request_body()
-    {
-        var controller = ControllerFor(_aliceId);
-        controller.HttpContext.Request.Body = new MemoryStream("Title,Content\r\nFrom CSV,Body\r\n"u8.ToArray());
-
-        var created = Assert.IsType<ObjectResult>(await controller.ImportCsv(default));
-
-        Assert.Equal("From CSV", Assert.Single(Assert.IsType<NoteImportResponse>(created.Value).Notes).Note.Title);
-    }
-
-    [Fact]
-    public async Task Import_csv_returns_validation_problem_for_malformed_csv()
-    {
-        var controller = ControllerFor(_aliceId);
-        controller.HttpContext.Request.Body = new MemoryStream("Id\r\n1\r\n"u8.ToArray());
-
-        var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(await controller.ImportCsv(default)).Value);
-        Assert.Contains("Csv", problem.Errors.Keys);
-    }
-
-    [Fact]
     public async Task Export_returns_json_by_default()
     {
         var note = await _db.AddNoteAsync(_aliceId);

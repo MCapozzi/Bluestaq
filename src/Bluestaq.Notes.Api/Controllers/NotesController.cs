@@ -160,32 +160,18 @@ public sealed class NotesController(NotesDbContext db, NoteExporter exporter, No
     }
 
     /// <summary>
-    /// Bulk-imports notes from an export document (JSON body) as new notes owned by the caller. Imports are
-    /// all-or-nothing: any invalid note rejects the whole request with 400.
+    /// Bulk-imports an export file as new notes owned by the caller: the JSON export document, or the CSV export as
+    /// <c>text/csv</c> (bound by <see cref="NoteCsvInputFormatter"/>). All-or-nothing: any invalid note returns 400.
     /// </summary>
     [HttpPost("import")]
-    [Consumes("application/json")]
+    [Consumes("application/json", "text/csv")]
     [ProducesResponseType<NoteImportResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
-    public Task<IActionResult> Import(NoteImportRequest request, CancellationToken ct) => ImportCoreAsync(() => request.Notes!, ct);
-
-    /// <summary>Bulk-imports notes from a CSV export (<c>text/csv</c> body), with the same rules as the JSON import.</summary>
-    [HttpPost("import")]
-    [Consumes("text/csv")]
-    [ProducesResponseType<NoteImportResponse>(StatusCodes.Status201Created)]
-    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> ImportCsv(CancellationToken ct)
-    {
-        using var reader = new StreamReader(Request.Body, System.Text.Encoding.UTF8);
-        var csv = await reader.ReadToEndAsync(ct);
-        return await ImportCoreAsync(() => NoteCsvReader.Read(csv), ct);
-    }
-
-    private async Task<IActionResult> ImportCoreAsync(Func<IReadOnlyList<ImportedNote?>> notes, CancellationToken ct)
+    public async Task<IActionResult> Import(NoteImportRequest request, CancellationToken ct)
     {
         try
         {
-            var result = await importer.ImportAsync(User.GetUserId(), notes(), ct);
+            var result = await importer.ImportAsync(User.GetUserId(), request.Notes!, ct);
             return StatusCode(StatusCodes.Status201Created, result);
         }
         catch (NoteImportException ex)
