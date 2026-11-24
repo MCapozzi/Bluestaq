@@ -18,6 +18,8 @@ if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("Connection string 'ConnectionStrings:Notes' is not configured.");
 }
 
+connectionString = ConnectionStrings.WithPassword(connectionString, builder.Configuration["Database:Password"]);
+
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserAccessor, HttpContextCurrentUserAccessor>();
