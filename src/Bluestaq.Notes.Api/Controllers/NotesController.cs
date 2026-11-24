@@ -130,8 +130,9 @@ public sealed class NotesController(NotesDbContext db, NoteExporter exporter) : 
     /// <c>from</c>/<c>to</c> creation-date range. Returns JSON, or a CSV file when <c>format</c> is <c>csv</c>.
     /// </summary>
     [HttpPost("export")]
-    [ProducesResponseType<NoteExportResponse>(StatusCodes.Status200OK, "application/json")]
-    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK, "text/csv")]
+    // One declaration per status code: MVC keeps only the last one, so both content types go on the same attribute.
+    [ProducesResponseType<NoteExportResponse>(StatusCodes.Status200OK, "application/json", "text/csv")]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Export(NoteExportRequest request, CancellationToken ct)
     {
         NoteExportResponse export;
