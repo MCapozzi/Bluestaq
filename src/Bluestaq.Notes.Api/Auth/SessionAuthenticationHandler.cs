@@ -1,4 +1,6 @@
+using System.Data.Common;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
@@ -25,7 +27,18 @@ public sealed class SessionAuthenticationHandler(
             return AuthenticateResult.NoResult();
         }
 
-        var result = await sessions.ValidateAsync(token, Context.RequestAborted);
+        SessionValidationResult? result;
+        try
+        {
+            result = await sessions.ValidateAsync(token, Context.RequestAborted);
+        }
+        catch (DbException ex) when (Context.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is not null)
+        {
+            // Anonymous endpoints (e.g. register) still run, and handle the database failure themselves.
+            Logger.LogWarning(ex, "Could not validate the session for an anonymous endpoint.");
+            return AuthenticateResult.NoResult();
+        }
+
         if (result?.Session.User is not { } user)
         {
             return AuthenticateResult.Fail("Invalid or expired session.");

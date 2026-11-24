@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Bluestaq.Notes.Api.Auth;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -41,6 +42,23 @@ public sealed class SessionAuthenticationHandlerTests : IDisposable
         await handler.InitializeAsync(
             new AuthenticationScheme(SessionAuthenticationDefaults.Scheme, null, typeof(SessionAuthenticationHandler)), context);
         return (handler, context);
+    }
+
+    [Fact]
+    public async Task Database_errors_leave_anonymous_endpoints_unauthenticated_and_fail_protected_ones()
+    {
+        var token = await LoginAsync();
+        await using (var ctx = _db.CreateContext())
+        {
+            await ctx.Database.ExecuteSqlRawAsync("DROP TABLE sessions;");
+        }
+
+        var (anonymous, anonymousContext) = await CreateHandlerAsync(r => r.Headers.Authorization = $"Bearer {token}");
+        anonymousContext.SetEndpoint(new Endpoint(null, new EndpointMetadataCollection(new AllowAnonymousAttribute()), "register"));
+        Assert.True((await anonymous.AuthenticateAsync()).None);
+
+        var (protectedHandler, _) = await CreateHandlerAsync(r => r.Headers.Authorization = $"Bearer {token}");
+        await Assert.ThrowsAnyAsync<System.Data.Common.DbException>(protectedHandler.AuthenticateAsync);
     }
 
     [Fact]
