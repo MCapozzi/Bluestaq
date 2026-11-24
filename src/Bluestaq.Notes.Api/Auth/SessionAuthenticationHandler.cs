@@ -19,22 +19,29 @@ public sealed class SessionAuthenticationHandler(
 {
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var token = ReadToken();
+        var (token, fromCookie) = ReadToken();
         if (string.IsNullOrEmpty(token))
         {
             return AuthenticateResult.NoResult();
         }
 
-        var session = await sessions.ValidateAsync(token, Context.RequestAborted);
-        if (session?.User is null)
+        var result = await sessions.ValidateAsync(token, Context.RequestAborted);
+        if (result?.Session.User is not { } user)
         {
             return AuthenticateResult.Fail("Invalid or expired session.");
+        }
+
+        var session = result.Session;
+        if (fromCookie && result.Extended)
+        {
+            // Keep the browser cookie alive as long as the server-side session.
+            SessionCookie.Append(Context, sessionOptions.Value, token, session.ExpiresAt);
         }
 
         Claim[] claims =
         [
             new(ClaimTypes.NameIdentifier, session.UserId.ToString()),
-            new(ClaimTypes.Name, session.User.Username),
+            new(ClaimTypes.Name, user.Username),
             new(SessionAuthenticationDefaults.SessionIdClaim, session.Id.ToString()),
         ];
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, Scheme.Name));
@@ -47,14 +54,14 @@ public sealed class SessionAuthenticationHandler(
         return base.HandleChallengeAsync(properties);
     }
 
-    private string? ReadToken()
+    private (string? Token, bool FromCookie) ReadToken()
     {
         var header = Request.Headers.Authorization.ToString();
         if (header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
         {
-            return header["Bearer ".Length..].Trim();
+            return (header["Bearer ".Length..].Trim(), false);
         }
 
-        return Request.Cookies[sessionOptions.Value.CookieName];
+        return (Request.Cookies[sessionOptions.Value.CookieName], true);
     }
 }

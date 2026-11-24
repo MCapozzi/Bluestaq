@@ -73,14 +73,7 @@ public sealed class AuthController(
 
         var (session, token) = await sessions.CreateAsync(user, ct);
 
-        Response.Cookies.Append(sessionOptions.Value.CookieName, token, new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = Request.IsHttps,
-            SameSite = SameSiteMode.Strict,
-            Expires = session.ExpiresAt,
-            Path = "/",
-        });
+        SessionCookie.Append(HttpContext, sessionOptions.Value, token, session.ExpiresAt);
 
         return Ok(new SessionResponse(token, session.ExpiresAt, ToResponse(user)));
     }
@@ -90,7 +83,7 @@ public sealed class AuthController(
     public async Task<IActionResult> Logout(CancellationToken ct)
     {
         await sessions.RevokeAsync(User.GetSessionId(), ct);
-        Response.Cookies.Delete(sessionOptions.Value.CookieName, new CookieOptions { Path = "/" });
+        SessionCookie.Delete(HttpContext, sessionOptions.Value);
         return NoContent();
     }
 

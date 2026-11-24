@@ -33,7 +33,7 @@ public sealed class SessionService(NotesDbContext db, IOptions<SessionAuthOption
     }
 
     /// <summary>Returns the active session for a token, sliding its expiry forward, or null if invalid/expired.</summary>
-    public async Task<Session?> ValidateAsync(string token, CancellationToken ct)
+    public async Task<SessionValidationResult?> ValidateAsync(string token, CancellationToken ct)
     {
         var now = clock.GetUtcNow().UtcDateTime;
         var hash = HashToken(token);
@@ -49,9 +49,10 @@ public sealed class SessionService(NotesDbContext db, IOptions<SessionAuthOption
             session.LastSeenAt = now;
             session.ExpiresAt = now + _options.IdleTimeout;
             await db.SaveChangesAsync(ct);
+            return new SessionValidationResult(session, Extended: true);
         }
 
-        return session;
+        return new SessionValidationResult(session, Extended: false);
     }
 
     public Task RevokeAsync(long sessionId, CancellationToken ct) =>
@@ -63,3 +64,5 @@ public sealed class SessionService(NotesDbContext db, IOptions<SessionAuthOption
     private static string Base64UrlEncode(byte[] bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 }
+
+public sealed record SessionValidationResult(Session Session, bool Extended);
