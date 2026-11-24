@@ -98,10 +98,18 @@ public sealed class AlertDispatcher(
             var sent = 0;
             foreach (var connection in open)
             {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(options.Value.SendTimeout);
                 try
                 {
-                    await connection.Socket.SendAsync(payload, WebSocketMessageType.Text, endOfMessage: true, ct);
+                    await connection.Socket.SendAsync(payload, WebSocketMessageType.Text, endOfMessage: true, timeout.Token);
                     sent++;
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // A client that stops reading must not stall pushes to everyone else.
+                    connections.Remove(connection);
+                    connection.Socket.Abort();
                 }
                 catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or InvalidOperationException)
                 {

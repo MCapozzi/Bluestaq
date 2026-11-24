@@ -250,6 +250,42 @@ public sealed class AlertTests : IAsyncLifetime
         dispatcher.Wake();
     }
 
+    [Fact]
+    public async Task Dispatcher_drops_a_socket_that_stops_accepting_sends_and_still_serves_others()
+    {
+        long sessionId;
+        await using (var ctx = _db.CreateContext())
+        {
+            var now = _db.Clock.GetUtcNow().UtcDateTime;
+            var session = new Session { UserId = _bob, TokenHash = new string('c', 64), CreatedAt = now, LastSeenAt = now, ExpiresAt = now.AddHours(1) };
+            ctx.Sessions.Add(session);
+            await ctx.SaveChangesAsync();
+            sessionId = session.Id;
+        }
+
+        await ShareAsync(_note.Id, _bob, _alice);
+        var services = new ServiceCollection()
+            .AddScoped(_ => _db.CreateContext())
+            .AddScoped<AlertService>()
+            .AddSingleton<TimeProvider>(_db.Clock)
+            .Configure<AlertOptions>(_ => { })
+            .BuildServiceProvider();
+        var connections = new AlertConnections();
+        var stalled = new FakeSocket { HangSends = true };
+        var healthy = new FakeSocket();
+        connections.Add(_bob, sessionId, stalled);
+        connections.Add(_bob, sessionId, healthy);
+        var dispatcher = new AlertDispatcher(
+            services.GetRequiredService<IServiceScopeFactory>(), connections,
+            Options.Create(new AlertOptions { SendTimeout = TimeSpan.FromMilliseconds(50) }), _db.Clock, NullLogger<AlertDispatcher>.Instance);
+
+        await dispatcher.DispatchOnceAsync(default).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(WebSocketState.Aborted, stalled.State);
+        Assert.Single(healthy.Sent);
+        Assert.Equal([healthy], connections.ByUser().Single().Select(c => c.Socket));
+    }
+
     [Theory]
     [InlineData(null, null, true)]
     [InlineData("https://api.example.com", null, true)]
@@ -280,6 +316,7 @@ public sealed class AlertTests : IAsyncLifetime
     {
         public List<byte[]> Sent { get; } = [];
         public bool FailSends { get; init; }
+        public bool HangSends { get; init; }
         public WebSocketState CurrentState { get; set; } = WebSocketState.Open;
         public WebSocketCloseStatus? ClosedWith { get; private set; }
 
@@ -312,6 +349,11 @@ public sealed class AlertTests : IAsyncLifetime
             if (FailSends)
             {
                 throw new WebSocketException("gone");
+            }
+
+            if (HangSends)
+            {
+                return Task.Delay(Timeout.Infinite, cancellationToken);
             }
 
             Sent.Add(buffer.ToArray());
