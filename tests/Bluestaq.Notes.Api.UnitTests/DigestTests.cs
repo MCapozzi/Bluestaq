@@ -394,6 +394,9 @@ public sealed class DigestTests : IAsyncLifetime
             Options.Create(new DigestOptions()), _db.Clock, NullLogger<DigestDispatcher>.Instance);
 
         Assert.Equal(1, await dispatcher.SendOnceAsync(default));
+        Assert.Equal(TimeSpan.FromMinutes(1), dispatcher.NextDelay());
+        At(Jan3Midnight.AddSeconds(-20));
+        Assert.Equal(TimeSpan.FromSeconds(20), dispatcher.NextDelay());
 
         _email.IsConfigured = false;
         await dispatcher.StartAsync(default);

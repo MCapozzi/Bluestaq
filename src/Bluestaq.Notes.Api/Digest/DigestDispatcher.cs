@@ -10,6 +10,8 @@ public sealed class DigestDispatcher(
     TimeProvider clock,
     ILogger<DigestDispatcher> logger) : BackgroundService
 {
+    private readonly DigestSchedule _schedule = new(TimeZoneInfo.FindSystemTimeZoneById(options.Value.TimeZone));
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!sender.IsConfigured)
@@ -23,7 +25,7 @@ public sealed class DigestDispatcher(
             try
             {
                 await SendOnceAsync(stoppingToken);
-                await Task.Delay(options.Value.PollInterval, clock, stoppingToken);
+                await Task.Delay(NextDelay(), clock, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -32,9 +34,17 @@ public sealed class DigestDispatcher(
             catch (Exception ex)
             {
                 logger.LogError(ex, "Note digest pass failed.");
-                await Task.Delay(options.Value.PollInterval, clock, stoppingToken).ContinueWith(_ => { }, CancellationToken.None);
+                await Task.Delay(NextDelay(), clock, stoppingToken).ContinueWith(_ => { }, CancellationToken.None);
             }
         }
+    }
+
+    /// <summary>The poll interval, cut short at midnight so the send window is never polled past.</summary>
+    public TimeSpan NextDelay()
+    {
+        var now = clock.GetUtcNow().UtcDateTime;
+        var untilMidnight = _schedule.NextMidnight(now) - now;
+        return untilMidnight < options.Value.PollInterval ? untilMidnight : options.Value.PollInterval;
     }
 
     public async Task<int> SendOnceAsync(CancellationToken ct)
