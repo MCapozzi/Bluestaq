@@ -8,8 +8,11 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration.GetConnectionString("Notes")
-    ?? throw new InvalidOperationException("Connection string 'ConnectionStrings:Notes' is not configured.");
+var connectionString = builder.Configuration.GetConnectionString("Notes");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException("Connection string 'ConnectionStrings:Notes' is not configured.");
+}
 
 builder.Services.AddDbContext<NotesDbContext>(options => options.UseMySQL(connectionString));
 
