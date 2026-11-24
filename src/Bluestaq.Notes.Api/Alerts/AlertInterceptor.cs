@@ -26,18 +26,37 @@ public sealed class AlertInterceptor(ICurrentUserAccessor currentUser, TimeProvi
         return result;
     }
 
+    /// <summary>Deleting a note removes its undelivered alerts in the same save; delivered rows stay to keep throttling pushes.</summary>
+    private static async Task DropPendingAlertsForDeletedNotesAsync(NotesDbContext db, bool sync, CancellationToken ct)
+    {
+        var deletedNoteIds = db.ChangeTracker.Entries<Note>().Where(e => e.State == EntityState.Deleted).Select(e => e.Entity.Id).ToList();
+        if (deletedNoteIds.Count == 0)
+        {
+            return;
+        }
+
+        var pendingQuery = db.NoteAlerts.Where(a => a.DeliveredAt == null && deletedNoteIds.Contains(a.NoteId));
+        db.NoteAlerts.RemoveRange(sync ? pendingQuery.ToList() : await pendingQuery.ToListAsync(ct));
+    }
+
     /// <summary>PUT marks every field modified, so compare values to skip resubmissions of identical text.</summary>
     private static bool Changed(PropertyEntry<Note, string> property) =>
         property.IsModified && !string.Equals(property.OriginalValue, property.CurrentValue, StringComparison.Ordinal);
 
     private async Task QueueAlertsAsync(DbContext? context, bool sync, CancellationToken ct)
     {
-        if (context is not NotesDbContext db || currentUser.UserId is not { } actorId)
+        if (context is not NotesDbContext db)
         {
             return;
         }
 
         db.ChangeTracker.DetectChanges();
+        await DropPendingAlertsForDeletedNotesAsync(db, sync, ct);
+        if (currentUser.UserId is not { } actorId)
+        {
+            return;
+        }
+
         var wanted = new List<(long RecipientId, long NoteId, NoteAlertKind Kind)>();
 
         foreach (var share in db.ChangeTracker.Entries<NoteShare>().Where(e => e.State == EntityState.Added))

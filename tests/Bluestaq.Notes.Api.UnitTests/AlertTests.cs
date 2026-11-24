@@ -222,6 +222,32 @@ public sealed class AlertTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Deleting_a_note_removes_its_pending_alerts_but_keeps_delivered_ones()
+    {
+        var other = await _db.AddNoteAsync(_alice, "Other");
+        await ShareAsync(_note.Id, _bob, _alice);
+        await using (var ctx = _db.CreateContext())
+        {
+            var service = Service(ctx);
+            await service.MarkDeliveredAsync((await service.TakePendingAsync(_bob, default))!, default);
+        }
+
+        await EditAsync(_note.Id, _alice, "v2");
+        await ShareAsync(other.Id, _bob, _alice);
+        await using (var ctx = _db.CreateContext())
+        {
+            _db.CurrentUser.UserId = _alice;
+            ctx.Notes.Remove(await ctx.Notes.SingleAsync(n => n.Id == _note.Id));
+            await ctx.SaveChangesAsync();
+        }
+
+        var alerts = await AlertsAsync();
+        Assert.Equal(2, alerts.Count);
+        Assert.NotNull(alerts.Single(a => a.NoteId == _note.Id).DeliveredAt);
+        Assert.Null(alerts.Single(a => a.NoteId == other.Id).DeliveredAt);
+    }
+
+    [Fact]
     public async Task An_event_merged_after_the_batch_was_built_stays_pending()
     {
         await ShareAsync(_note.Id, _bob, _alice);

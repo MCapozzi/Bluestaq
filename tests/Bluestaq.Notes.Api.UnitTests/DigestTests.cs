@@ -234,6 +234,27 @@ public sealed class DigestTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Deleted_notes_are_left_out_of_the_digest()
+    {
+        await OptInAsync(_bob, sharedNotes: true, publicNotes: true);
+        await ShareAsync(_plan.Id, _bob, _alice);
+        var announcement = await AddPublicNoteAsync(_alice, "Announcement");
+        Assert.False((await BuildAsync(true, true)).IsEmpty);
+
+        await using (var ctx = _db.CreateContext())
+        {
+            _db.CurrentUser.UserId = _alice;
+            ctx.Notes.RemoveRange(await ctx.Notes.Where(n => n.Id == _plan.Id || n.Id == announcement.Id).ToListAsync());
+            await ctx.SaveChangesAsync();
+        }
+
+        Assert.True((await BuildAsync(true, true)).IsEmpty);
+        At(Jan2Midnight.AddMinutes(1));
+        Assert.Equal(0, await SendDueAsync());
+        Assert.Empty(_email.Sent);
+    }
+
+    [Fact]
     public async Task Own_edits_edits_before_sharing_and_revoked_shares_are_left_out()
     {
         await EditAsync(_plan.Id, _alice, "Edited before sharing");

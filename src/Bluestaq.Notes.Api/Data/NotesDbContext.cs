@@ -66,8 +66,8 @@ public sealed class NotesDbContext(DbContextOptions<NotesDbContext> options) : D
         modelBuilder.Entity<NoteAlert>(e =>
         {
             e.ToTable("note_alerts");
-            // No FK to notes: deleting a note must not erase the delivered rows that throttle pushes. Pending alerts for a
-            // deleted note are dropped by AlertService because the note is no longer readable.
+            // No FK to notes: deleting a note must not erase the delivered rows that throttle pushes. AlertInterceptor removes
+            // a deleted note's pending alerts, and AlertService drops any for notes that are otherwise no longer readable.
             e.HasIndex(a => a.NoteId);
             e.HasOne<User>().WithMany().HasForeignKey(a => a.RecipientUserId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(a => new { a.RecipientUserId, a.DeliveredAt });
