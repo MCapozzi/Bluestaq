@@ -190,6 +190,23 @@ public sealed class DigestTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_send_cancelled_by_shutdown_releases_the_claim()
+    {
+        await ShareAsync(_plan.Id, _bob, _alice);
+        await SetFrequencyAsync(_bob, DigestFrequency.Daily);
+        using var shutdown = new CancellationTokenSource();
+        shutdown.Cancel();
+        _email.FailWith = new OperationCanceledException(shutdown.Token);
+
+        await using (var ctx = _db.CreateContext())
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Service(ctx).SendDueAsync(shutdown.Token));
+        }
+
+        Assert.Null((await UserAsync(_bob)).DigestLastSentAt);
+    }
+
+    [Fact]
     public async Task An_overdue_digest_is_sent_once_and_restarts_the_period()
     {
         await ShareAsync(_plan.Id, _bob, _alice);

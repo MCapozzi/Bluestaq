@@ -99,12 +99,18 @@ public sealed class DigestService(NotesDbContext db, IEmailSender sender, TimePr
                     sent++;
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            catch (Exception ex)
             {
-                logger.LogError(ex, "Sending the note digest for user {UserId} failed; it will be retried.", user.Id);
+                // Release the claim on any failure, shutdown included, so the window's activity isn't skipped.
                 await db.Users
                     .Where(u => u.Id == user.Id && u.DigestLastSentAt == now)
                     .ExecuteUpdateAsync(s => s.SetProperty(u => u.DigestLastSentAt, user.DigestLastSentAt), CancellationToken.None);
+                if (ex is OperationCanceledException && ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+
+                logger.LogError(ex, "Sending the note digest for user {UserId} failed; it will be retried.", user.Id);
             }
         }
 
