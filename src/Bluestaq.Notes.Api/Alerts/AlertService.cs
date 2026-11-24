@@ -6,7 +6,10 @@ using Microsoft.Extensions.Options;
 
 namespace Bluestaq.Notes.Api.Alerts;
 
-public sealed record AlertBatch(long RecipientUserId, IReadOnlyList<long> AlertIds, AlertMessage Message);
+public sealed record AlertBatch(long RecipientUserId, IReadOnlyList<BatchedAlert> Alerts, AlertMessage Message);
+
+/// <summary>An alert row as it was when the batch was built; <see cref="Occurrences"/> identifies that version.</summary>
+public sealed record BatchedAlert(long Id, int Occurrences);
 
 /// <summary>Builds aggregated alert batches and enforces the per-user push interval.</summary>
 public sealed class AlertService(NotesDbContext db, TimeProvider clock, IOptions<AlertOptions> options)
@@ -83,15 +86,21 @@ public sealed class AlertService(NotesDbContext db, TimeProvider clock, IOptions
             .ThenBy(i => i.NoteId)
             .ToList();
 
-        return new AlertBatch(userId, pending.Select(a => a.Id).ToList(), new AlertMessage(now, items));
+        return new AlertBatch(userId, pending.Select(a => new BatchedAlert(a.Id, a.Occurrences)).ToList(), new AlertMessage(now, items));
     }
 
-    public Task MarkDeliveredAsync(AlertBatch batch, CancellationToken ct)
+    /// <summary>
+    /// Marks the batch's rows delivered, but only those unchanged since the batch was built: an event merged into a row
+    /// in the meantime wasn't in the message, so that row stays pending for the next push.
+    /// </summary>
+    public async Task MarkDeliveredAsync(AlertBatch batch, CancellationToken ct)
     {
         var now = clock.GetUtcNow().UtcDateTime;
-        var ids = batch.AlertIds;
-        return db.NoteAlerts
-            .Where(a => ids.Contains(a.Id))
-            .ExecuteUpdateAsync(s => s.SetProperty(a => a.DeliveredAt, now), ct);
+        foreach (var (id, occurrences) in batch.Alerts)
+        {
+            await db.NoteAlerts
+                .Where(a => a.Id == id && a.Occurrences == occurrences)
+                .ExecuteUpdateAsync(s => s.SetProperty(a => a.DeliveredAt, now), ct);
+        }
     }
 }

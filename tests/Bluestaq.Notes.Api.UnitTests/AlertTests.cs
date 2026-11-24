@@ -156,7 +156,7 @@ public sealed class AlertTests : IAsyncLifetime
         var batch = await service.TakePendingAsync(_bob, default);
 
         Assert.NotNull(batch);
-        Assert.Equal(3, batch.AlertIds.Count);
+        Assert.Equal(3, batch.Alerts.Count);
         Assert.Equal("alerts", batch.Message.Type);
         Assert.Equal(2, batch.Message.Alerts.Count);
         var plan = batch.Message.Alerts.Single(a => a.NoteId == _note.Id);
@@ -183,6 +183,24 @@ public sealed class AlertTests : IAsyncLifetime
 
         // Delivered rows older than the interval are pruned.
         Assert.DoesNotContain(await AlertsAsync(), a => a.DeliveredAt != null);
+    }
+
+    [Fact]
+    public async Task An_event_merged_after_the_batch_was_built_stays_pending()
+    {
+        await ShareAsync(_note.Id, _bob, _alice);
+        await EditAsync(_note.Id, _alice, "v2");
+        await using var ctx = _db.CreateContext();
+        var service = Service(ctx);
+        var batch = (await service.TakePendingAsync(_bob, default))!;
+
+        await EditAsync(_note.Id, _alice, "v3");
+        await service.MarkDeliveredAsync(batch, default);
+
+        var alerts = await AlertsAsync();
+        Assert.NotNull(alerts.Single(a => a.Kind == NoteAlertKind.Shared).DeliveredAt);
+        var update = alerts.Single(a => a.Kind == NoteAlertKind.Updated);
+        Assert.Equal((2, null), (update.Occurrences, update.DeliveredAt));
     }
 
     [Fact]
