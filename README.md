@@ -145,8 +145,9 @@ with status `1008`.
 ```
 
 `sharedBy` is whoever shared the note with you (the owner, or an administrator acting on it); `updatedBy` and
-`lastUpdatedAt` describe the note's latest edit. Each API instance pushes to the sockets connected to it, so
-multi-instance deployments work without sticky sessions.
+`lastUpdatedAt` describe the note's latest edit. Each API instance pushes only to the sockets connected to it, and a
+push to any of a user's sockets counts as that user's push for the interval. With several API replicas, use sticky
+sessions so all of a user's sockets land on the same replica; otherwise a socket on another replica can miss a push.
 
 ### Administrators
 
