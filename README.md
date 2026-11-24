@@ -115,7 +115,8 @@ can't read it gets **404**. Deleting a note or user removes its shares.
 
 Add `"format": "csv"` to get a `text/csv` download (`notes-export-<timestamp>.csv`) instead of JSON
 `{ exportedAt, count, notes, notFoundIds }`. CSV cells starting with `= + - @` are prefixed with `'` to prevent
-spreadsheet formula injection. Supplying zero or more than one selector, or an incomplete/inverted range, returns 400.
+spreadsheet formula injection. Supplying zero or more than one selector, or an incomplete/inverted range, returns 400. A selection matching more than
+`Export:MaxNotes` notes (default 10,000) is rejected with 400 rather than buffered.
 
 ### Example
 
@@ -147,10 +148,10 @@ curl -s localhost:8080/api/notes -H "Authorization: Bearer $TOKEN"
 ```
 src/Bluestaq.Notes.Api
   Auth/          session service, authentication handler, options
-  Controllers/   AuthController, NotesController
+  Controllers/   AuthController, NotesController, NoteSharingController
   Contracts/     request/response DTOs and validation limits
   Data/          NotesDbContext, AuditInterceptor and EF Core migrations
-  Domain/        User, Note, Session entities
+  Domain/        User, Note, NoteShare, Session entities; NoteAccess.ReadableBy
   Export/        NoteExporter (query) and NoteCsvWriter
 tests/Bluestaq.Notes.Api.UnitTests  unit tests (in-memory SQLite, fake clock), with a 70% line-coverage gate
 tests/Bluestaq.Notes.Api.Tests      integration tests (WebApplicationFactory + Testcontainers MySQL)
