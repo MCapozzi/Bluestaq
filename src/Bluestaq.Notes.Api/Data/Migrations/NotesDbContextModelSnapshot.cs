@@ -181,6 +181,9 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                     b.Property<long>("UserId")
                         .HasColumnType("bigint");
 
+                    b.Property<int>("Permission")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("SharedAt")
                         .HasColumnType("datetime(6)");
 
@@ -228,6 +231,48 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("sessions", (string)null);
+                });
+
+            modelBuilder.Entity("Bluestaq.Notes.Api.Domain.ShareRequest", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long?>("DecidedByUserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("NoteId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Permission")
+                        .HasColumnType("int");
+
+                    b.Property<long>("RequestedByUserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Status")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int");
+
+                    b.Property<long>("TargetUserId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestedByUserId");
+
+                    b.HasIndex("TargetUserId");
+
+                    b.HasIndex("NoteId", "Status");
+
+                    b.ToTable("note_share_requests", (string)null);
                 });
 
             modelBuilder.Entity("Bluestaq.Notes.Api.Domain.User", b =>
@@ -317,6 +362,33 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Bluestaq.Notes.Api.Domain.ShareRequest", b =>
+                {
+                    b.HasOne("Bluestaq.Notes.Api.Domain.Note", "Note")
+                        .WithMany()
+                        .HasForeignKey("NoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Bluestaq.Notes.Api.Domain.User", "RequestedBy")
+                        .WithMany()
+                        .HasForeignKey("RequestedByUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Bluestaq.Notes.Api.Domain.User", "TargetUser")
+                        .WithMany()
+                        .HasForeignKey("TargetUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Note");
+
+                    b.Navigation("RequestedBy");
+
+                    b.Navigation("TargetUser");
                 });
 
             modelBuilder.Entity("Bluestaq.Notes.Api.Domain.Note", b =>

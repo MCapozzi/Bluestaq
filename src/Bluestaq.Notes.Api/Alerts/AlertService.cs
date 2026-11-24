@@ -76,7 +76,8 @@ public sealed class AlertService(NotesDbContext db, TimeProvider clock, IOptions
             .Select(g =>
             {
                 var note = notes[g.Key];
-                var share = g.FirstOrDefault(a => a.Kind == NoteAlertKind.Shared);
+                // For a share request (sent to the owner), the requesting editor is reported as the sharer.
+                var share = g.FirstOrDefault(a => a.Kind is NoteAlertKind.Shared or NoteAlertKind.ShareRequested);
                 return new NoteAlertItem(
                     note.Id,
                     note.Title,

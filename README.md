@@ -12,7 +12,8 @@ authorized against a server-side session stored in the database.
 - **Session authentication**: server-side sessions via cookie or `Authorization: Bearer` token, sliding expiry, one
   active session per user.
 - **Registration error handling**: database failures alert online administrators and point repeat failures to support.
-- **Sharing**: notes are private by default; make one public (any logged-in user) or share it read-only with users.
+- **Sharing**: notes are private by default; make one public (any logged-in user) or share it with users as read-only
+  or editor. Editors can request more shares, which the owner approves.
 - **Bulk export** by note IDs, owner or creation date range, as JSON or CSV.
 - **Bulk import** of an export file (JSON or CSV), e.g. to move notes between instances.
 - **Audit trail** on every note: who created and last updated it, and when.
@@ -33,8 +34,9 @@ edited. Each alert says who shared the note, its title and when it was last upda
 most once per 30 minutes per user.
 
 Connect to `/ws/alerts` with your session (the `notes_session` cookie, or `Authorization: Bearer <token>` for non-browser
-clients). The server pushes an alert when a note is **shared with you**, or when a note **shared with you is
-edited** (title or content). You are never alerted about your own changes.
+clients). The server pushes an alert when a note is **shared with you**, when a note **shared with you is
+edited** (title or content), when an editor or administrator **edits your note**, and when an editor **requests to share
+your note**. You are never alerted about your own changes.
 
 Alerts are stored in `note_alerts` as they happen and pushed **at most once per 30 minutes per user**: if nothing was
 pushed to you in the last 30 minutes, pending alerts go out within a few seconds; otherwise they are combined and sent
@@ -247,14 +249,19 @@ All endpoints except `register`, `login` and `/health` require a valid session. 
 | GET | `/api/notes/shared?page=1&pageSize=20` | Other users' notes you can read (shared with you or public) | 200 |
 | GET | `/api/notes/{id}` | Get a note you can read | 200 |
 | POST | `/api/notes` | Create `{ title, content }` | 201 |
-| PUT | `/api/notes/{id}` | Replace `{ title, content }` | 200 |
+| PUT | `/api/notes/{id}` | Replace `{ title, content }` (owner or editor) | 200 |
 | DELETE | `/api/notes/{id}` | Delete a note | 204 |
 | POST | `/api/notes/export` | Bulk export notes you can read (see [Export](#export)) | 200 |
 | POST | `/api/notes/import` | Bulk import an export file as your own new notes (see [Import](#import)) | 201 |
-| GET | `/api/notes/{id}/sharing` | Visibility and share list (owner only) | 200 |
+| GET | `/api/notes/{id}/sharing` | Visibility and share list (owner or editor) | 200 |
 | PUT | `/api/notes/{id}/visibility` | `{ "visibility": "public" \| "private" }` (owner only) | 200 |
-| POST | `/api/notes/{id}/shares` | Share with a user `{ username }`; idempotent (owner only) | 200 |
+| POST | `/api/notes/{id}/shares` | Share with a user `{ username, permission? }` (`Read` default, or `Edit`); also changes an existing share's permission; idempotent (owner only) | 200 |
 | DELETE | `/api/notes/{id}/shares/{username}` | Revoke a user's access; idempotent (owner only) | 200 |
+| POST | `/api/notes/{id}/share-requests` | Ask the owner to share the note `{ username, permission? }` (editors only) | 201 (200 if already pending) |
+| GET | `/api/notes/{id}/share-requests?status=` | The note's share requests: all for the owner, your own for editors | 200 |
+| GET | `/api/notes/share-requests` | Pending share requests on all notes you own | 200 |
+| POST | `/api/notes/{id}/share-requests/{requestId}/approve` | Approve: creates or upgrades the share (owner only) | 200 (409 if decided or requester no longer an editor) |
+| POST | `/api/notes/{id}/share-requests/{requestId}/reject` | Reject a pending request (owner only) | 200 (409 if decided) |
 | GET | `/api/digest` | Your digest opt-ins and next digest time | 200 |
 | PUT | `/api/digest` | `{ "sharedNotes": bool, "publicNotes": bool }` | 200 |
 | GET | `/api/digest/preview` | Tonight's digest so far (today's activity), without sending it | 200 |
@@ -278,9 +285,22 @@ include them, along with `ownerId`.
 ### Sharing
 
 Each note has a `visibility` (`private` by default, or `public`) and a list of users it is shared with
-(`note_shares`). A user can **read** a note if they own it, it is public, or it is shared with them. Only the owner can
-update, delete, or change sharing; a user who can read a note but doesn't own it gets **403** for those, and a user who
-can't read it gets **404**. Deleting a note or user removes its shares.
+(`note_shares`), each with a `permission`:
+
+| Who | Read | Edit title/content | View sharing | Request a share | Delete, visibility, shares, approve requests |
+| --- | --- | --- | --- | --- | --- |
+| Owner (and administrators) | yes | yes | yes | no, shares directly | yes |
+| `Edit` share (editor) | yes | yes | yes | yes | no |
+| `Read` share, or public note | yes | no | no | no | no |
+
+A user who can read a note but lacks the permission gets **403**, and a user who can't read it gets **404**. The owner
+picks the permission when sharing (`Read` by default) and can change it by sharing again.
+
+**Share requests**: an editor can ask to share the note with another user (`Read` by default, or `Edit`) via
+`POST /api/notes/{id}/share-requests`. Nothing changes until the owner approves; approval creates the share (or upgrades an
+existing `Read` share), recorded as shared by the editor. The owner sees pending requests per note or across all their
+notes and approves or rejects each one. A request can't be approved if its requester is no longer an editor, and a
+request is decided only once (concurrent decisions get **409**). Deleting a note or user removes its shares and requests.
 
 ### Failed registrations
 
@@ -391,7 +411,6 @@ python3 scripts/check-import-coverage.py
 
 ## Possible next steps
 
-- Edit permission for shared users (currently shares are read-only).
 - Optimistic concurrency (`ETag`/`If-Match`) for simultaneous edits.
 - Per-account lockout, and a background job to purge expired sessions.
 - Redis backplane so alerts reach sockets on any API replica (see TODO in `AlertDispatcher`).

@@ -92,7 +92,7 @@ public sealed class NotesController(NotesDbContext db, NoteExporter exporter, No
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(long id, NoteRequest request, CancellationToken ct)
     {
-        var (note, error) = await NoteAccessGuard.FindOwnedAsync(this, db, id, ct);
+        var (note, error) = await NoteAccessGuard.FindEditableAsync(this, db, id, ct);
         if (note is null)
         {
             return error!;

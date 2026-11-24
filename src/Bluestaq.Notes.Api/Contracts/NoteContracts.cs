@@ -28,9 +28,33 @@ public sealed record NoteResponse(
 
 public sealed record SetVisibilityRequest([Required, EnumDataType(typeof(NoteVisibility))] NoteVisibility? Visibility);
 
-public sealed record ShareNoteRequest([Required(AllowEmptyStrings = false)] string Username);
+/// <param name="Permission">
+/// <c>Read</c> or <c>Edit</c>. Omitted: <c>Read</c> for a new share, unchanged for an existing one.
+/// </param>
+public sealed record ShareNoteRequest(
+    [Required(AllowEmptyStrings = false)] string Username,
+    [EnumDataType(typeof(SharePermission))] SharePermission? Permission = null);
 
-public sealed record NoteShareResponse(long UserId, string Username, DateTime SharedAt);
+public sealed record NoteShareResponse(long UserId, string Username, DateTime SharedAt, SharePermission Permission);
+
+/// <param name="Permission">Access to grant if the owner approves; defaults to <c>Read</c>.</param>
+public sealed record CreateShareRequestRequest(
+    [Required(AllowEmptyStrings = false)] string Username,
+    [EnumDataType(typeof(SharePermission))] SharePermission? Permission = null);
+
+public sealed record ShareRequestResponse(
+    long Id,
+    long NoteId,
+    string NoteTitle,
+    long RequestedByUserId,
+    string RequestedBy,
+    long UserId,
+    string Username,
+    SharePermission Permission,
+    ShareRequestStatus Status,
+    DateTime CreatedAt,
+    long? DecidedByUserId,
+    DateTime? DecidedAt);
 
 public sealed record NoteSharingResponse(long NoteId, NoteVisibility Visibility, IReadOnlyList<NoteShareResponse> SharedWith);
 
