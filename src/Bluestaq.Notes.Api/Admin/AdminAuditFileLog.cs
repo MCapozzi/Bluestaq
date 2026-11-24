@@ -23,13 +23,15 @@ public sealed class AdminAuditFileLog : IDisposable
 
     public AdminAuditFileLog(IOptions<AdminAuditOptions> options)
     {
+        // Serilog swallows sink failures; surface them so a broken audit file isn't silent.
+        Serilog.Debugging.SelfLog.Enable(Console.Error);
         _logger = new LoggerConfiguration()
             .WriteTo.File(
                 new CompactJsonFormatter(),
                 options.Value.LogFilePath,
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: options.Value.RetainedFileCount,
-                shared: true)
+                flushToDiskInterval: TimeSpan.FromSeconds(1))
             .CreateLogger();
     }
 
