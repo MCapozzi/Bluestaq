@@ -30,6 +30,8 @@ public sealed class AdminAuditFileLog : IDisposable
                 new CompactJsonFormatter(),
                 options.Value.LogFilePath,
                 rollingInterval: RollingInterval.Day,
+                // Start a new file at the size limit instead of silently dropping entries until the next day.
+                rollOnFileSizeLimit: true,
                 retainedFileCountLimit: options.Value.RetainedFileCount,
                 flushToDiskInterval: TimeSpan.FromSeconds(1))
             .CreateLogger();
