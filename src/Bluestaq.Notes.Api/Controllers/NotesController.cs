@@ -77,6 +77,11 @@ public sealed class NotesController(NotesDbContext db, TimeProvider clock) : Con
         note.Title = request.Title;
         note.Content = request.Content;
         note.UpdatedAt = clock.GetUtcNow().UtcDateTime;
+
+        // PUT is a full replacement: write every field so overlapping updates can't interleave fields.
+        var entry = db.Entry(note);
+        entry.Property(n => n.Title).IsModified = true;
+        entry.Property(n => n.Content).IsModified = true;
         await db.SaveChangesAsync(ct);
 
         return Ok(NoteResponse.From(note));
