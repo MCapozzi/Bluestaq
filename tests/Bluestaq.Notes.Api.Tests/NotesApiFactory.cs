@@ -25,6 +25,7 @@ public sealed class NotesApiFactory : WebApplicationFactory<Program>, IAsyncLife
         builder.UseSetting("RateLimiting:Auth:PermitLimit", RateLimitPermits.ToString());
         builder.UseSetting("Admin:BootstrapUsername", AdminUsername);
         builder.UseSetting("Admin:BootstrapPassword", AdminPassword);
+        builder.UseSetting("Alerts:PollInterval", "00:00:00.200");
         builder.UseSetting("AdminAudit:LogFilePath", Path.Combine(AdminAuditDirectory, "admin-audit-.log"));
     }
 

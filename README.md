@@ -65,6 +65,8 @@ has ready-made requests for every endpoint.
 | `Admin:BootstrapUsername` / `Admin:BootstrapPassword` | _(empty)_ | Create (or promote) this administrator at startup |
 | `AdminAudit:LogFilePath` | `logs/admin-audit-.log` | Admin audit JSON-lines file, rolled daily (date inserted before `.log`) |
 | `AdminAudit:RetainedFileCount` | `90` | Number of daily admin audit files kept |
+| `Alerts:PushInterval` | `00:30:00` | Minimum time between alert pushes to the same user |
+| `Alerts:PollInterval` | `00:00:05` | How often connected users are checked for due alerts |
 
 Use environment variables in containers, e.g. `ConnectionStrings__Notes=...`.
 
@@ -89,6 +91,8 @@ All endpoints except `register`, `login` and `/health` require a valid session. 
 | PUT | `/api/notes/{id}/visibility` | `{ "visibility": "public" \| "private" }` (owner only) | 200 |
 | POST | `/api/notes/{id}/shares` | Share with a user `{ username }`; idempotent (owner only) | 200 |
 | DELETE | `/api/notes/{id}/shares/{username}` | Revoke a user's access; idempotent (owner only) | 200 |
+| GET (WebSocket) | `/ws/alerts` | Receive share/update alerts (see below) | 101 |
+| GET | `/health` | Liveness check (anonymous) | 200 |
 | GET | `/api/admin/users` | All users with their roles (admin only) | 200 |
 | PUT | `/api/admin/users/{id}/role` | `{ "role": "Administrator" \| "User" }`; can't change your own role (admin only) | 200 |
 | GET | `/api/admin/notes?userId=&page=&pageSize=` | All notes, optionally for one owner (admin only) | 200 |
@@ -110,6 +114,36 @@ Each note has a `visibility` (`private` by default, or `public`) and a list of u
 (`note_shares`). A user can **read** a note if they own it, it is public, or it is shared with them. Only the owner can
 update, delete, or change sharing; a user who can read a note but doesn't own it gets **403** for those, and a user who
 can't read it gets **404**. Deleting a note or user removes its shares.
+
+### Alerts (WebSocket)
+
+Connect to `/ws/alerts` with your session (the `notes_session` cookie, or `Authorization: Bearer <token>` for non-browser
+clients). The server pushes an alert when a note is **shared with you**, or when a note **shared with you is
+edited** (title or content). You are never alerted about your own changes.
+
+Alerts are stored in `note_alerts` as they happen and pushed **at most once per 30 minutes per user**: if nothing was
+pushed to you in the last 30 minutes, pending alerts go out within a few seconds; otherwise they are combined and sent
+when the 30 minutes are up. Alerts wait in the database while you're offline and are delivered when you connect.
+Alerts for notes you can no longer read are dropped. When your session ends (logout or expiry) the socket is closed
+with status `1008`.
+
+```json
+{
+  "type": "alerts",
+  "sentAt": "2026-11-24T22:30:00Z",
+  "alerts": [
+    {
+      "noteId": 42, "title": "Roadmap", "sharedBy": "alice", "updatedBy": "alice",
+      "lastUpdatedAt": "2026-11-24T22:28:13Z", "events": ["Shared", "Updated"], "eventCount": 3,
+      "firstOccurredAt": "2026-11-24T22:01:05Z", "lastOccurredAt": "2026-11-24T22:28:13Z"
+    }
+  ]
+}
+```
+
+`sharedBy` is whoever shared the note with you (the owner, or an administrator acting on it); `updatedBy` and
+`lastUpdatedAt` describe the note's latest edit. Each API instance pushes to the sockets connected to it, so
+multi-instance deployments work without sticky sessions.
 
 ### Administrators
 
@@ -177,11 +211,12 @@ curl -s localhost:8080/api/notes -H "Authorization: Bearer $TOKEN"
 ```
 src/Bluestaq.Notes.Api
   Admin/         bootstrapper, admin audit middleware, DB + file audit loggers
+  Alerts/        alert interceptor, aggregation service, WebSocket endpoint and dispatcher
   Auth/          session service, authentication handler, roles, options
   Controllers/   AuthController, NotesController, NoteSharingController, AdminController
   Contracts/     request/response DTOs and validation limits
   Data/          NotesDbContext, AuditInterceptor and EF Core migrations
-  Domain/        User, Note, NoteShare, Session, AdminAuditEntry entities; NoteAccess.ReadableBy
+  Domain/        User, Note, NoteShare, NoteAlert, Session, AdminAuditEntry entities; NoteAccess.ReadableBy
   Export/        NoteExporter (query) and NoteCsvWriter
 tests/Bluestaq.Notes.Api.UnitTests  unit tests (in-memory SQLite, fake clock), with a 70% line-coverage gate
 tests/Bluestaq.Notes.Api.Tests      integration tests (WebApplicationFactory + Testcontainers MySQL)

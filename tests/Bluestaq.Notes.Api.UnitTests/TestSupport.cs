@@ -35,7 +35,7 @@ internal sealed class TestDb : IDisposable
 
     public NotesDbContext CreateContext() => new(new DbContextOptionsBuilder<NotesDbContext>()
         .UseSqlite(_connection)
-        .AddInterceptors(new AuditInterceptor(CurrentUser, Clock))
+        .AddInterceptors(new AuditInterceptor(CurrentUser, Clock), new Alerts.AlertInterceptor(CurrentUser, Clock))
         .Options);
 
     public async Task<User> AddUserAsync(string username = "alice")

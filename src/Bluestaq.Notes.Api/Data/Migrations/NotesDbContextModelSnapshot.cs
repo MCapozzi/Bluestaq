@@ -125,6 +125,45 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                     b.ToTable("notes", (string)null);
                 });
 
+            modelBuilder.Entity("Bluestaq.Notes.Api.Domain.NoteAlert", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ActorUserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("DeliveredAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("FirstOccurredAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("LastOccurredAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long>("NoteId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Occurrences")
+                        .HasColumnType("int");
+
+                    b.Property<long>("RecipientUserId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NoteId");
+
+                    b.HasIndex("RecipientUserId", "DeliveredAt");
+
+                    b.ToTable("note_alerts", (string)null);
+                });
+
             modelBuilder.Entity("Bluestaq.Notes.Api.Domain.NoteShare", b =>
                 {
                     b.Property<long>("NoteId")
@@ -218,6 +257,23 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("Bluestaq.Notes.Api.Domain.NoteAlert", b =>
+                {
+                    b.HasOne("Bluestaq.Notes.Api.Domain.Note", "Note")
+                        .WithMany()
+                        .HasForeignKey("NoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Bluestaq.Notes.Api.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("RecipientUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Note");
                 });
 
             modelBuilder.Entity("Bluestaq.Notes.Api.Domain.NoteShare", b =>

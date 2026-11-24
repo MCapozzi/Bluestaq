@@ -1,4 +1,5 @@
 using Bluestaq.Notes.Api.Admin;
+using Bluestaq.Notes.Api.Alerts;
 using Bluestaq.Notes.Api.Auth;
 using Bluestaq.Notes.Api.Data;
 using Bluestaq.Notes.Api.Domain;
@@ -24,9 +25,15 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserAccessor, HttpContextCurrentUserAccessor>();
 builder.Services.AddScoped<AuditInterceptor>();
+builder.Services.AddScoped<AlertInterceptor>();
 builder.Services.AddDbContext<NotesDbContext>((sp, options) => options
     .UseMySQL(connectionString)
-    .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
+    .AddInterceptors(sp.GetRequiredService<AuditInterceptor>(), sp.GetRequiredService<AlertInterceptor>()));
+builder.Services.Configure<AlertOptions>(builder.Configuration.GetSection(AlertOptions.SectionName));
+builder.Services.AddScoped<AlertService>();
+builder.Services.AddSingleton<AlertConnections>();
+builder.Services.AddSingleton<AlertDispatcher>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AlertDispatcher>());
 builder.Services.Configure<ExportOptions>(builder.Configuration.GetSection(ExportOptions.SectionName));
 builder.Services.AddScoped<NoteExporter>();
 builder.Services.Configure<SessionAuthOptions>(builder.Configuration.GetSection(SessionAuthOptions.SectionName));
@@ -95,12 +102,14 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi().AllowAnonymous();
 }
 
+app.UseWebSockets();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseMiddleware<AdminAuditMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();
+app.Map(AlertEndpoint.Path, AlertEndpoint.HandleAsync);
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
 await app.RunAsync();

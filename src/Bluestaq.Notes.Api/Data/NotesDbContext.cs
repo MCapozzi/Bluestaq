@@ -11,6 +11,7 @@ public sealed class NotesDbContext(DbContextOptions<NotesDbContext> options) : D
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<NoteShare> NoteShares => Set<NoteShare>();
     public DbSet<AdminAuditEntry> AdminAuditLog => Set<AdminAuditEntry>();
+    public DbSet<NoteAlert> NoteAlerts => Set<NoteAlert>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -60,6 +61,14 @@ public sealed class NotesDbContext(DbContextOptions<NotesDbContext> options) : D
             e.HasOne(s => s.Note).WithMany(n => n.Shares).HasForeignKey(s => s.NoteId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(s => s.UserId);
+        });
+
+        modelBuilder.Entity<NoteAlert>(e =>
+        {
+            e.ToTable("note_alerts");
+            e.HasOne(a => a.Note).WithMany().HasForeignKey(a => a.NoteId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<User>().WithMany().HasForeignKey(a => a.RecipientUserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(a => new { a.RecipientUserId, a.DeliveredAt });
         });
 
         modelBuilder.Entity<Session>(e =>
