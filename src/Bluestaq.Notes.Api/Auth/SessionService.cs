@@ -16,9 +16,6 @@ public sealed class SessionService(NotesDbContext db, IOptions<SessionAuthOption
         var now = clock.GetUtcNow().UtcDateTime;
         var token = Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
 
-        // One session per user: a new login ends every earlier session.
-        await db.Sessions.Where(s => s.UserId == user.Id).ExecuteDeleteAsync(ct);
-
         var session = new Session
         {
             UserId = user.Id,
@@ -30,6 +27,10 @@ public sealed class SessionService(NotesDbContext db, IOptions<SessionAuthOption
         };
         db.Sessions.Add(session);
         await db.SaveChangesAsync(ct);
+
+        // One session per user: a new login ends every earlier session. Deleting after the insert, and only older rows,
+        // means overlapping logins leave just the newest session instead of all of them.
+        await db.Sessions.Where(s => s.UserId == user.Id && s.Id < session.Id).ExecuteDeleteAsync(ct);
         return (session, token);
     }
 
