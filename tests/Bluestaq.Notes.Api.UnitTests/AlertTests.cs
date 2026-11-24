@@ -114,6 +114,23 @@ public sealed class AlertTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Resubmitting_identical_text_raises_no_update_alert()
+    {
+        await ShareAsync(_note.Id, _bob, _alice);
+        _db.CurrentUser.UserId = _alice;
+        await using (var ctx = _db.CreateContext())
+        {
+            var note = await ctx.Notes.SingleAsync();
+            var entry = ctx.Entry(note);
+            entry.Property(n => n.Title).IsModified = true;
+            entry.Property(n => n.Content).IsModified = true;
+            await ctx.SaveChangesAsync();
+        }
+
+        Assert.DoesNotContain(await AlertsAsync(), a => a.Kind == NoteAlertKind.Updated);
+    }
+
+    [Fact]
     public async Task Sync_save_queues_update_alerts_too()
     {
         await ShareAsync(_note.Id, _bob, _alice);

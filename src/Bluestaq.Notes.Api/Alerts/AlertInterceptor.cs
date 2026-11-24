@@ -2,6 +2,7 @@ using Bluestaq.Notes.Api.Auth;
 using Bluestaq.Notes.Api.Data;
 using Bluestaq.Notes.Api.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Bluestaq.Notes.Api.Alerts;
@@ -25,6 +26,10 @@ public sealed class AlertInterceptor(ICurrentUserAccessor currentUser, TimeProvi
         return result;
     }
 
+    /// <summary>PUT marks every field modified, so compare values to skip resubmissions of identical text.</summary>
+    private static bool Changed(PropertyEntry<Note, string> property) =>
+        property.IsModified && !string.Equals(property.OriginalValue, property.CurrentValue, StringComparison.Ordinal);
+
     private async Task QueueAlertsAsync(DbContext? context, bool sync, CancellationToken ct)
     {
         if (context is not NotesDbContext db || currentUser.UserId is not { } actorId)
@@ -42,7 +47,7 @@ public sealed class AlertInterceptor(ICurrentUserAccessor currentUser, TimeProvi
 
         var editedNoteIds = db.ChangeTracker.Entries<Note>()
             .Where(e => e.State == EntityState.Modified
-                && (e.Property(n => n.Title).IsModified || e.Property(n => n.Content).IsModified))
+                && (Changed(e.Property(n => n.Title)) || Changed(e.Property(n => n.Content))))
             .Select(e => e.Entity.Id)
             .ToList();
         if (editedNoteIds.Count > 0)
