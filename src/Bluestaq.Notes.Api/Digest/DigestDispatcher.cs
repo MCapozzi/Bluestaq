@@ -2,7 +2,7 @@ using Microsoft.Extensions.Options;
 
 namespace Bluestaq.Notes.Api.Digest;
 
-/// <summary>Periodically sends due note digests. Does nothing when no mail server is configured.</summary>
+/// <summary>Polls for the nightly digests to send. Does nothing when no mail server is configured.</summary>
 public sealed class DigestDispatcher(
     IServiceScopeFactory scopes,
     IEmailSender sender,

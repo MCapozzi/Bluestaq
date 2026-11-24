@@ -7,9 +7,13 @@ public sealed class User
     public required string PasswordHash { get; set; }
     public DateTime CreatedAt { get; set; }
     public UserRole Role { get; set; } = UserRole.User;
-    public DigestFrequency DigestFrequency { get; set; } = DigestFrequency.None;
+    /// <summary>Opted in to the daily digest of notes shared with the user (off by default).</summary>
+    public bool DigestSharedNotes { get; set; }
 
-    /// <summary>End of the window covered by the last digest; null until the first digest after opting in.</summary>
+    /// <summary>Opted in to the daily digest of new and edited public notes (off by default).</summary>
+    public bool DigestPublicNotes { get; set; }
+
+    /// <summary>End (midnight) of the last day a digest was processed for; null if none yet.</summary>
     public DateTime? DigestLastSentAt { get; set; }
 
     public List<Note> Notes { get; } = [];

@@ -4,32 +4,29 @@ using Bluestaq.Notes.Api.Contracts;
 using Bluestaq.Notes.Api.Data;
 using Bluestaq.Notes.Api.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Bluestaq.Notes.Api.Digest;
 
-/// <summary>Builds note digests and emails the ones that are due.</summary>
-public sealed class DigestService(NotesDbContext db, IEmailSender sender, TimeProvider clock, ILogger<DigestService> logger)
+/// <summary>Builds note digests and emails each opted-in user's digest once a day, just after midnight.</summary>
+public sealed class DigestService(
+    NotesDbContext db, IEmailSender sender, TimeProvider clock, IOptions<DigestOptions> options, ILogger<DigestService> logger)
 {
-    public static TimeSpan? PeriodOf(DigestFrequency frequency) => frequency switch
-    {
-        DigestFrequency.Daily => TimeSpan.FromDays(1),
-        DigestFrequency.Weekly => TimeSpan.FromDays(7),
-        _ => null,
-    };
+    public DigestSchedule Schedule { get; } = new(TimeZoneInfo.FindSystemTimeZoneById(options.Value.TimeZone));
 
     /// <summary>
-    /// Notes explicitly shared with the user during (<paramref name="since"/>, <paramref name="until"/>], and notes
-    /// someone else changed (title or content) during the window after sharing them. A null <paramref name="since"/>
-    /// covers all time. Only a note's latest content edit is known, so a later edit by the user hides earlier ones.
+    /// Activity in [<paramref name="from"/>, <paramref name="until"/>) for the sections the user opted in to. Edits mean
+    /// title or content changes by someone else; only a note's latest edit is known, so a later edit hides earlier ones.
+    /// Public notes the user owns, or that are also shared with them while they get shared notes, are left out.
     /// </summary>
     public async Task<NoteDigest> BuildAsync(
-        long userId, string username, DigestFrequency frequency, DateTime? since, DateTime until, CancellationToken ct)
+        long userId, string username, bool sharedNotes, bool publicNotes, DateTime from, DateTime until, CancellationToken ct)
     {
-        var shares = await db.NoteShares.AsNoTracking()
-            .Where(s => s.UserId == userId && s.SharedAt <= until)
-            .Where(s => since == null
-                || s.SharedAt > since
-                || (s.Note!.ContentUpdatedAt > since && s.Note.ContentUpdatedAt > s.SharedAt && s.Note.ContentUpdatedByUserId != userId))
+        var shares = !sharedNotes ? [] : await db.NoteShares.AsNoTracking()
+            .Where(s => s.UserId == userId)
+            .Where(s => (s.SharedAt >= from && s.SharedAt < until)
+                || (s.Note!.ContentUpdatedAt >= from && s.Note.ContentUpdatedAt < until
+                    && s.Note.ContentUpdatedAt > s.SharedAt && s.Note.ContentUpdatedByUserId != userId))
             .Select(s => new
             {
                 s.NoteId,
@@ -41,51 +38,75 @@ public sealed class DigestService(NotesDbContext db, IEmailSender sender, TimePr
             })
             .ToListAsync(ct);
 
-        var userIds = shares.SelectMany(s => new[] { s.SharedBy, s.UpdatedByUserId }).Distinct().ToList();
+        var publicNotesList = !publicNotes ? [] : await db.Notes.AsNoTracking()
+            .Where(n => n.Visibility == NoteVisibility.Public && n.OwnerId != userId)
+            .Where(n => !sharedNotes || !n.Shares.Any(s => s.UserId == userId))
+            .Where(n => (n.PublicSince >= from && n.PublicSince < until)
+                || (n.ContentUpdatedAt >= from && n.ContentUpdatedAt < until
+                    && n.ContentUpdatedAt > n.PublicSince && n.ContentUpdatedByUserId != userId))
+            .Select(n => new { n.Id, n.Title, n.OwnerId, PublicSince = n.PublicSince!.Value, n.ContentUpdatedByUserId, n.ContentUpdatedAt })
+            .ToListAsync(ct);
+
+        var userIds = shares.SelectMany(s => new[] { s.SharedBy, s.UpdatedByUserId })
+            .Concat(publicNotesList.SelectMany(n => new[] { n.OwnerId, n.ContentUpdatedByUserId }))
+            .Distinct().ToList();
         var usernames = await db.Users.AsNoTracking()
             .Where(u => userIds.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id, u => u.Username, ct);
         string NameOf(long id) => usernames.GetValueOrDefault(id, $"user {id}");
+        bool InWindow(DateTime at) => at >= from && at < until;
 
         var newlyShared = shares
-            .Where(s => since == null || s.SharedAt > since)
+            .Where(s => InWindow(s.SharedAt))
             .OrderByDescending(s => s.SharedAt).ThenBy(s => s.NoteId)
             .Select(s => new DigestNote(s.NoteId, s.Title, NameOf(s.SharedBy), s.SharedAt, NameOf(s.UpdatedByUserId), s.UpdatedAt))
             .ToList();
         var updated = shares
-            .Where(s => s.UpdatedAt > s.SharedAt && s.UpdatedByUserId != userId && (since == null || s.UpdatedAt > since))
+            .Where(s => InWindow(s.UpdatedAt) && s.UpdatedAt > s.SharedAt && s.UpdatedByUserId != userId)
             .OrderByDescending(s => s.UpdatedAt).ThenBy(s => s.NoteId)
             .Select(s => new DigestNote(s.NoteId, s.Title, NameOf(s.SharedBy), s.SharedAt, NameOf(s.UpdatedByUserId), s.UpdatedAt))
             .ToList();
+        var newPublic = publicNotesList
+            .Where(n => InWindow(n.PublicSince))
+            .OrderByDescending(n => n.PublicSince).ThenBy(n => n.Id)
+            .Select(n => new PublicDigestNote(n.Id, n.Title, NameOf(n.OwnerId), n.PublicSince, NameOf(n.ContentUpdatedByUserId), n.ContentUpdatedAt))
+            .ToList();
+        var updatedPublic = publicNotesList
+            .Where(n => InWindow(n.ContentUpdatedAt) && n.ContentUpdatedAt > n.PublicSince && n.ContentUpdatedByUserId != userId)
+            .OrderByDescending(n => n.ContentUpdatedAt).ThenBy(n => n.Id)
+            .Select(n => new PublicDigestNote(n.Id, n.Title, NameOf(n.OwnerId), n.PublicSince, NameOf(n.ContentUpdatedByUserId), n.ContentUpdatedAt))
+            .ToList();
 
-        return new NoteDigest(username, frequency, since, until, newlyShared, updated);
+        return new NoteDigest(username, from, until, newlyShared, updated, newPublic, updatedPublic);
     }
 
     /// <summary>
-    /// Emails every opted-in user whose period has elapsed since their last digest (or who has never had one). Each user
-    /// is claimed with a conditional update first, so concurrent instances don't send twice; a failed send releases the
-    /// claim so the digest is retried. Users with nothing new get no email but their window still advances.
+    /// Within <see cref="DigestOptions.SendWindow"/> after midnight, emails every opted-in user the digest for the day
+    /// that just ended, once. Each user is claimed with a conditional update first, so concurrent instances don't send
+    /// twice; a failed send releases the claim so the next pass retries it. Users with nothing new get no email.
     /// </summary>
     /// <returns>The number of emails sent.</returns>
     public async Task<int> SendDueAsync(CancellationToken ct)
     {
         var now = clock.GetUtcNow().UtcDateTime;
-        var dailyCutoff = now - PeriodOf(DigestFrequency.Daily)!.Value;
-        var weeklyCutoff = now - PeriodOf(DigestFrequency.Weekly)!.Value;
+        var (from, until) = Schedule.PreviousDay(now);
+        if (now - until >= options.Value.SendWindow)
+        {
+            return 0;
+        }
 
         var due = await db.Users.AsNoTracking()
-            .Where(u => (u.DigestFrequency == DigestFrequency.Daily && (u.DigestLastSentAt == null || u.DigestLastSentAt <= dailyCutoff))
-                || (u.DigestFrequency == DigestFrequency.Weekly && (u.DigestLastSentAt == null || u.DigestLastSentAt <= weeklyCutoff)))
+            .Where(u => (u.DigestSharedNotes || u.DigestPublicNotes) && (u.DigestLastSentAt == null || u.DigestLastSentAt < until))
             .OrderBy(u => u.Id)
-            .Select(u => new { u.Id, u.Username, u.DigestFrequency, u.DigestLastSentAt })
+            .Select(u => new { u.Id, u.Username, u.DigestSharedNotes, u.DigestPublicNotes, u.DigestLastSentAt })
             .ToListAsync(ct);
 
         var sent = 0;
         foreach (var user in due)
         {
             var claimed = await db.Users
-                .Where(u => u.Id == user.Id && u.DigestFrequency == user.DigestFrequency && u.DigestLastSentAt == user.DigestLastSentAt)
-                .ExecuteUpdateAsync(s => s.SetProperty(u => u.DigestLastSentAt, now), ct);
+                .Where(u => u.Id == user.Id && u.DigestLastSentAt == user.DigestLastSentAt)
+                .ExecuteUpdateAsync(s => s.SetProperty(u => u.DigestLastSentAt, until), ct);
             if (claimed == 0)
             {
                 continue;
@@ -93,18 +114,21 @@ public sealed class DigestService(NotesDbContext db, IEmailSender sender, TimePr
 
             try
             {
-                var digest = await BuildAsync(user.Id, user.Username, user.DigestFrequency, user.DigestLastSentAt, now, ct);
-                if (!digest.IsEmpty)
+                var digest = await BuildAsync(user.Id, user.Username, user.DigestSharedNotes, user.DigestPublicNotes, from, until, ct);
+                if (digest.IsEmpty)
                 {
-                    await sender.SendAsync(ToEmail(digest), ct);
-                    sent++;
+                    logger.LogDebug("No digest email for user {UserId}: nothing new.", user.Id);
+                    continue;
                 }
+
+                await sender.SendAsync(ToEmail(digest, Schedule), ct);
+                sent++;
             }
             catch (Exception ex)
             {
-                // Release the claim on any failure, shutdown included, so the window's activity isn't skipped.
+                // Release the claim on any failure, shutdown included, so the next pass can retry it.
                 await db.Users
-                    .Where(u => u.Id == user.Id && u.DigestLastSentAt == now)
+                    .Where(u => u.Id == user.Id && u.DigestLastSentAt == until)
                     .ExecuteUpdateAsync(s => s.SetProperty(u => u.DigestLastSentAt, user.DigestLastSentAt), CancellationToken.None);
                 if (ex is OperationCanceledException && ct.IsCancellationRequested)
                 {
@@ -118,39 +142,41 @@ public sealed class DigestService(NotesDbContext db, IEmailSender sender, TimePr
         return sent;
     }
 
-    public static EmailMessage ToEmail(NoteDigest digest)
+    public static EmailMessage ToEmail(NoteDigest digest, DigestSchedule schedule)
     {
-        var period = digest.Frequency == DigestFrequency.Weekly ? "weekly" : "daily";
+        string Format(DateTime utc) => schedule.ToLocal(utc).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+        var day = schedule.ToLocal(digest.From).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var body = new StringBuilder()
             .AppendLine($"Hi {digest.Username},")
             .AppendLine()
-            .AppendLine(digest.Since is { } since
-                ? $"Here is your {period} notes digest for {Format(since)} to {Format(digest.Until)}."
-                : $"Here is your first {period} notes digest: every note shared with you so far.");
+            .AppendLine($"Here is your daily notes digest for {day}. Times are {schedule.Zone.Id}.");
 
-        if (digest.NewlyShared.Count > 0)
+        void Section<T>(string heading, IReadOnlyList<T> notes, Func<T, string> line)
         {
-            body.AppendLine().AppendLine($"Shared with you ({digest.NewlyShared.Count}):");
-            foreach (var n in digest.NewlyShared)
+            if (notes.Count == 0)
             {
-                body.AppendLine($"- \"{Clean(n.Title)}\" (note {n.NoteId}), shared by {n.SharedBy} on {Format(n.SharedAt)}; last updated {Format(n.LastUpdatedAt)} by {n.UpdatedBy}");
+                return;
+            }
+
+            body.AppendLine().AppendLine($"{heading} ({notes.Count}):");
+            foreach (var n in notes)
+            {
+                body.AppendLine($"- {line(n)}");
             }
         }
 
-        if (digest.Updated.Count > 0)
-        {
-            body.AppendLine().AppendLine($"Changed since they were shared with you ({digest.Updated.Count}):");
-            foreach (var n in digest.Updated)
-            {
-                body.AppendLine($"- \"{Clean(n.Title)}\" (note {n.NoteId}), updated {Format(n.LastUpdatedAt)} by {n.UpdatedBy}; shared by {n.SharedBy} on {Format(n.SharedAt)}");
-            }
-        }
+        Section("Shared with you", digest.NewlyShared, n =>
+            $"\"{Clean(n.Title)}\" (note {n.NoteId}), shared by {n.SharedBy} at {Format(n.SharedAt)}; last updated {Format(n.LastUpdatedAt)} by {n.UpdatedBy}");
+        Section("Changed since they were shared with you", digest.Updated, n =>
+            $"\"{Clean(n.Title)}\" (note {n.NoteId}), updated {Format(n.LastUpdatedAt)} by {n.UpdatedBy}; shared by {n.SharedBy} at {Format(n.SharedAt)}");
+        Section("New public notes", digest.NewPublic, n =>
+            $"\"{Clean(n.Title)}\" (note {n.NoteId}) by {n.Owner}, public since {Format(n.PublicSince)}; last updated {Format(n.LastUpdatedAt)} by {n.UpdatedBy}");
+        Section("Changed public notes", digest.UpdatedPublic, n =>
+            $"\"{Clean(n.Title)}\" (note {n.NoteId}) by {n.Owner}, updated {Format(n.LastUpdatedAt)} by {n.UpdatedBy}");
 
-        body.AppendLine().AppendLine("To stop these emails, set your digest frequency to None (PUT /api/digest).");
-        return new EmailMessage(DigestOptions.Recipient, $"Your {period} notes digest ({digest.Username})", body.ToString());
+        body.AppendLine().AppendLine("To stop these emails, set sharedNotes and publicNotes to false (PUT /api/digest).");
+        return new EmailMessage(DigestOptions.Recipient, $"Your daily notes digest for {day} ({digest.Username})", body.ToString());
     }
-
-    private static string Format(DateTime value) => value.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture);
 
     private static string Clean(string title) => new(title.Select(c => char.IsControl(c) ? ' ' : c).ToArray());
 }

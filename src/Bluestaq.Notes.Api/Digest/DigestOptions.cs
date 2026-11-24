@@ -12,8 +12,14 @@ public sealed class DigestOptions
     /// </summary>
     public const string Recipient = "TEST@TEST.TEST";
 
-    /// <summary>How often users are checked for a due digest.</summary>
-    public TimeSpan PollInterval { get; set; } = TimeSpan.FromMinutes(5);
+    /// <summary>Digests go out at midnight in this time zone and cover the day that just ended.</summary>
+    public string TimeZone { get; set; } = "America/New_York";
+
+    /// <summary>How long after midnight a digest may still be sent (covers restarts and failed-send retries).</summary>
+    public TimeSpan SendWindow { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>How often the scheduler checks for digests to send.</summary>
+    public TimeSpan PollInterval { get; set; } = TimeSpan.FromMinutes(1);
 
     public string From { get; set; } = "notes@bluestaq.local";
 

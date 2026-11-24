@@ -106,6 +106,9 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                     b.Property<long>("OwnerId")
                         .HasColumnType("bigint");
 
+                    b.Property<DateTime?>("PublicSince")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -236,11 +239,14 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<int>("DigestFrequency")
-                        .HasColumnType("int");
-
                     b.Property<DateTime?>("DigestLastSentAt")
                         .HasColumnType("datetime(6)");
+
+                    b.Property<bool>("DigestPublicNotes")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("DigestSharedNotes")
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()

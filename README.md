@@ -16,7 +16,7 @@ authorized against a server-side session stored in the database.
 - **Audit trail** on every note: who created and last updated it, and when.
 - **Administrators** can reach every note; all their actions go to a database table and a separate log file.
 - **WebSocket alerts** when a note is shared with you or a shared note changes, at most one push per 30 minutes.
-- **Email digests** (opt-in, daily or weekly) of notes shared with you and shared notes that changed.
+- **Daily email digests** at midnight Eastern (opt-in) of shared notes and/or public notes that are new or changed.
 - **Docker Compose** files for local development and for deployment.
 - **Tests**: unit tests with coverage gates and MySQL integration tests (see [Tests](#tests)).
 
@@ -89,7 +89,9 @@ has ready-made requests for every endpoint.
 | `Digest:Smtp:Port` / `Digest:Smtp:Security` | `25` / `Auto` | SMTP port and TLS mode (`None`, `Auto`, `StartTls`, `SslOnConnect`) |
 | `Digest:Smtp:Username` / `Digest:Smtp:Password` | _(empty)_ | SMTP credentials, if the server needs them |
 | `Digest:From` | `notes@bluestaq.local` | Sender address of digest emails |
-| `Digest:PollInterval` | `00:05:00` | How often users are checked for a due digest |
+| `Digest:TimeZone` | `America/New_York` | Digests go out at midnight here and cover the day that just ended |
+| `Digest:SendWindow` | `01:00:00` | How long after midnight a digest can still go out (restarts, retries) |
+| `Digest:PollInterval` | `00:01:00` | How often the scheduler checks for digests to send |
 
 Use environment variables in containers, e.g. `ConnectionStrings__Notes=...`.
 
@@ -115,9 +117,9 @@ All endpoints except `register`, `login` and `/health` require a valid session. 
 | PUT | `/api/notes/{id}/visibility` | `{ "visibility": "public" \| "private" }` (owner only) | 200 |
 | POST | `/api/notes/{id}/shares` | Share with a user `{ username }`; idempotent (owner only) | 200 |
 | DELETE | `/api/notes/{id}/shares/{username}` | Revoke a user's access; idempotent (owner only) | 200 |
-| GET | `/api/digest` | Your digest setting, last and next digest time | 200 |
-| PUT | `/api/digest` | `{ "frequency": "None" \| "Daily" \| "Weekly" }` | 200 |
-| GET | `/api/digest/preview` | What your next digest would contain, without sending it | 200 |
+| GET | `/api/digest` | Your digest opt-ins and next digest time | 200 |
+| PUT | `/api/digest` | `{ "sharedNotes": bool, "publicNotes": bool }` | 200 |
+| GET | `/api/digest/preview` | Tonight's digest so far (today's activity), without sending it | 200 |
 | GET (WebSocket) | `/ws/alerts` | Receive share/update alerts (see below) | 101 |
 | GET | `/health` | Liveness check (anonymous) | 200 |
 | GET | `/api/admin/users` | All users with their roles (admin only) | 200 |
@@ -177,23 +179,30 @@ sessions so all of a user's sockets land on the same replica; otherwise a socket
 
 ### Email digests
 
-Users are **opted out** by default and opt in with `PUT /api/digest { "frequency": "Daily" }` (or `"Weekly"`);
-`"None"` opts out again. A background job emails each opted-in user once per day or week with:
+Users are **opted out** by default. `PUT /api/digest { "sharedNotes": true, "publicNotes": true }` opts in to either
+or both sections; set both to `false` to opt out. Once a day, at **midnight Eastern** (`America/New_York`, so it
+follows daylight saving), each opted-in user is emailed what happened during the day that just ended (midnight to
+midnight):
 
-- **Shared with you**: notes shared with you since your last digest.
-- **Changed since they were shared with you**: shared notes whose title or content someone else edited since your last
-  digest (and after sharing them with you). Visibility changes don't count.
+- `sharedNotes`:
+  - **Shared with you**: notes shared with you that day.
+  - **Changed since they were shared with you**: shared notes whose title or content someone else edited that day.
+- `publicNotes`:
+  - **New public notes**: other users' notes that became public that day.
+  - **Changed public notes**: other users' public notes whose title or content someone else edited that day.
 
-Each entry has the note's title and ID, who shared it and when, and when and by whom it was last updated. The first
-digest after opting in goes out within one poll interval and lists every note currently shared with you; later ones cover
-only the time since the previous digest. If there is nothing new, no email is sent. Only explicit shares count; public
-notes are not included. Opting out resets the window, so opting in again starts with a full digest.
+Visibility changes don't count as edits, and your own edits are left out. A public note that is also shared with you is
+listed only under the shared sections when you get them. Each entry has the note's title and ID, who shared or owns it,
+and when and by whom it was last edited; only a note's latest edit is known.
+
+**If an opted-in user has nothing new, no email is sent.** Digests only go out within `Digest:SendWindow` (1 hour)
+after midnight; a day missed because the service was down longer than that is skipped, not sent late.
 
 **For this project every digest is sent to `TEST@TEST.TEST`**, not to the user (users have no email address); the
 subject and greeting name the user it is for. Mail goes over SMTP (`Digest:Smtp:*`); `docker compose up` includes
 [Mailpit](https://mailpit.axllent.org/), which catches the mail and shows it at http://localhost:8025. Each user is
 claimed with a conditional update before sending, so several API replicas don't send the same digest twice; a failed
-send is retried on the next poll.
+send is retried on the next poll within the send window.
 
 ### Administrators
 

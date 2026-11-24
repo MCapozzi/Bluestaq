@@ -32,7 +32,6 @@ services:
       Digest__Smtp__Host: "mailpit"
       Digest__Smtp__Port: "1025"
       Digest__Smtp__Security: "None"
-      Digest__PollInterval: "00:00:30"
     ports:
       - "127.0.0.1:8080:8080"
     volumes:

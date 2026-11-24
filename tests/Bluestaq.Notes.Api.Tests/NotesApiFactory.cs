@@ -33,6 +33,8 @@ public sealed class NotesApiFactory : WebApplicationFactory<Program>, IAsyncLife
         builder.UseSetting("Alerts:PollInterval", "00:00:00.200");
         builder.UseSetting("AdminAudit:LogFilePath", Path.Combine(AdminAuditDirectory, "admin-audit-.log"));
         builder.UseSetting("Digest:PollInterval", "00:00:00.200");
+        // Lets the nightly digest go out whenever tests run; tests backdate activity into the previous day.
+        builder.UseSetting("Digest:SendWindow", "1.00:00:00");
         builder.ConfigureTestServices(services => services.AddSingleton<IEmailSender>(Emails));
     }
 

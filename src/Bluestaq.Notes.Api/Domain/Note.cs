@@ -18,4 +18,7 @@ public sealed class Note : IAuditable
     public long ContentUpdatedByUserId { get; set; }
 
     public DateTime ContentUpdatedAt { get; set; }
+
+    /// <summary>When the note last became public; null while private.</summary>
+    public DateTime? PublicSince { get; set; }
 }

@@ -49,6 +49,7 @@ public sealed class AuditInterceptor(ICurrentUserAccessor currentUser, TimeProvi
                     if (entry.Entity is Note added)
                     {
                         (added.ContentUpdatedByUserId, added.ContentUpdatedAt) = (creator, now);
+                        added.PublicSince = added.Visibility == NoteVisibility.Public ? now : null;
                     }
 
                     break;
@@ -59,6 +60,11 @@ public sealed class AuditInterceptor(ICurrentUserAccessor currentUser, TimeProvi
                     if (entry.Entity is Note note && (Changed(entry.Property(nameof(Note.Title))) || Changed(entry.Property(nameof(Note.Content)))))
                     {
                         (note.ContentUpdatedByUserId, note.ContentUpdatedAt) = (entry.Entity.UpdatedByUserId, now);
+                    }
+
+                    if (entry.Entity is Note republished && Changed(entry.Property(nameof(Note.Visibility))))
+                    {
+                        republished.PublicSince = republished.Visibility == NoteVisibility.Public ? now : null;
                     }
 
                     entry.Property(e => e.CreatedByUserId).IsModified = false;

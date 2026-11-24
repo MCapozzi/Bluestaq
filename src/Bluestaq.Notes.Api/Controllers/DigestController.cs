@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Bluestaq.Notes.Api.Controllers;
 
-/// <summary>The caller's opt-in to emailed digests of notes shared with them.</summary>
+/// <summary>The caller's opt-ins to the daily digest email.</summary>
 [ApiController]
 [Route("api/digest")]
 public sealed class DigestController(NotesDbContext db, DigestService digests, TimeProvider clock) : ControllerBase
@@ -17,29 +17,28 @@ public sealed class DigestController(NotesDbContext db, DigestService digests, T
     [ProducesResponseType<DigestSettingsResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Get(CancellationToken ct) => Ok(ToResponse(await CurrentUserAsync(ct)));
 
-    /// <summary>Opts in (<c>Daily</c> or <c>Weekly</c>) or out (<c>None</c>). Opting out resets the digest window.</summary>
+    /// <summary>Opts in or out of each digest section; both are off by default.</summary>
     [HttpPut]
     [ProducesResponseType<DigestSettingsResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Update(UpdateDigestRequest request, CancellationToken ct)
     {
-        // Written directly, not via change tracking: a digest claimed after the user was loaded must still be cleared.
-        var frequency = request.Frequency!.Value;
-        var users = db.Users.Where(u => u.Id == User.GetUserId());
-        await (frequency == DigestFrequency.None
-            ? users.ExecuteUpdateAsync(s => s.SetProperty(u => u.DigestFrequency, frequency).SetProperty(u => u.DigestLastSentAt, (DateTime?)null), ct)
-            : users.ExecuteUpdateAsync(s => s.SetProperty(u => u.DigestFrequency, frequency), ct));
+        var (sharedNotes, publicNotes) = (request.SharedNotes!.Value, request.PublicNotes!.Value);
+        await db.Users.Where(u => u.Id == User.GetUserId()).ExecuteUpdateAsync(s => s
+            .SetProperty(u => u.DigestSharedNotes, sharedNotes)
+            .SetProperty(u => u.DigestPublicNotes, publicNotes), ct);
         return Ok(ToResponse(await CurrentUserAsync(ct)));
     }
 
-    /// <summary>What the next digest would contain right now, without sending it.</summary>
+    /// <summary>What tonight's digest contains so far (today's activity), without sending it.</summary>
     [HttpGet("preview")]
     [ProducesResponseType<NoteDigest>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Preview(CancellationToken ct)
     {
         var user = await CurrentUserAsync(ct);
+        var now = clock.GetUtcNow().UtcDateTime;
         return Ok(await digests.BuildAsync(
-            user.Id, user.Username, user.DigestFrequency, user.DigestLastSentAt, clock.GetUtcNow().UtcDateTime, ct));
+            user.Id, user.Username, user.DigestSharedNotes, user.DigestPublicNotes, digests.Schedule.StartOfDay(now), digests.Schedule.NextMidnight(now), ct));
     }
 
     private Task<User> CurrentUserAsync(CancellationToken ct)
@@ -50,9 +49,10 @@ public sealed class DigestController(NotesDbContext db, DigestService digests, T
 
     private DigestSettingsResponse ToResponse(User user)
     {
-        var next = DigestService.PeriodOf(user.DigestFrequency) is { } period
-            ? user.DigestLastSentAt + period ?? clock.GetUtcNow().UtcDateTime
+        var next = user.DigestSharedNotes || user.DigestPublicNotes
+            ? digests.Schedule.NextMidnight(clock.GetUtcNow().UtcDateTime)
             : (DateTime?)null;
-        return new DigestSettingsResponse(user.DigestFrequency, user.DigestLastSentAt, next, DigestOptions.Recipient);
+        return new DigestSettingsResponse(
+            user.DigestSharedNotes, user.DigestPublicNotes, user.DigestLastSentAt, next, digests.Schedule.Zone.Id, DigestOptions.Recipient);
     }
 }
