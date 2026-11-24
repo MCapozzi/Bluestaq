@@ -74,4 +74,11 @@ public sealed class NoteExportRequestTests
         Assert.Equal(ExportFormat.Json, JsonSerializer.Deserialize<NoteExportRequest>("""{"userId":1}""", options)!.Format);
         Assert.Contains("\"Json\"", JsonSerializer.Serialize(ExportFormat.Json));
     }
+
+    [Fact]
+    public void Undefined_format_values_are_rejected()
+    {
+        var error = Assert.Single(Validate(new NoteExportRequest(UserId: 1, Format: (ExportFormat)7)));
+        Assert.Equal([nameof(NoteExportRequest.Format)], error.MemberNames);
+    }
 }

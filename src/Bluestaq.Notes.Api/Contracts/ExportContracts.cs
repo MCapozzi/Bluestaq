@@ -25,6 +25,12 @@ public sealed record NoteExportRequest(
 {
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
+        // The JSON converter also accepts integers, so out-of-range values must be rejected explicitly.
+        if (!Enum.IsDefined(Format))
+        {
+            yield return new ValidationResult("format must be 'json' or 'csv'.", [nameof(Format)]);
+        }
+
         var hasRange = From is not null || To is not null;
         var selectors = (NoteIds is not null ? 1 : 0) + (UserId is not null ? 1 : 0) + (hasRange ? 1 : 0);
         if (selectors != 1)

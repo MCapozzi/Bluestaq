@@ -48,5 +48,9 @@ public sealed class SharingTests(NotesApiFactory factory)
 
         var bad = await alice.PutAsync($"/api/notes/{note.Id}/visibility", new StringContent("""{"visibility":"friends"}""", System.Text.Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+        var numeric = await alice.PutAsync($"/api/notes/{note.Id}/visibility", new StringContent("""{"visibility":5}""", System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.BadRequest, numeric.StatusCode);
+        var format = await alice.PostAsync("/api/notes/export", new StringContent("""{"userId":1,"format":7}""", System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.BadRequest, format.StatusCode);
     }
 }

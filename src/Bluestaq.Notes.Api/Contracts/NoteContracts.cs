@@ -26,7 +26,7 @@ public sealed record NoteResponse(
             note.CreatedByUserId, note.CreatedAt, note.UpdatedByUserId, note.UpdatedAt, note.Visibility);
 }
 
-public sealed record SetVisibilityRequest([Required] NoteVisibility? Visibility);
+public sealed record SetVisibilityRequest([Required, EnumDataType(typeof(NoteVisibility))] NoteVisibility? Visibility);
 
 public sealed record ShareNoteRequest([Required(AllowEmptyStrings = false)] string Username);
 
