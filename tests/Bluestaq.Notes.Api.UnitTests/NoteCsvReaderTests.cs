@@ -76,6 +76,15 @@ public sealed class NoteCsvReaderTests
         Assert.Contains(key, ErrorsOf(csv).Keys);
 
     [Fact]
+    public void Row_limit_is_enforced_while_parsing()
+    {
+        Assert.Equal(2, NoteCsvReader.Read("Title,Content\nA,1\n\nB,2\n", maxNotes: 2).Count);
+
+        var errors = Assert.Throws<NoteImportException>(() => NoteCsvReader.Read("Title,Content\nA,1\nB,2\nC,3\nD,\"unterminated", maxNotes: 2)).Errors;
+        Assert.Contains("at most 2", Assert.Single(errors["Notes"]));
+    }
+
+    [Fact]
     public void All_bad_rows_are_reported_together()
     {
         var errors = ErrorsOf("Id,Title,Content\nx,A,B\nok,C\n3,D,E");

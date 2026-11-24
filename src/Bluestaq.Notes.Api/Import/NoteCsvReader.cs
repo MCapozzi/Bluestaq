@@ -16,10 +16,13 @@ public static class NoteCsvReader
 {
     private const string GuardedChars = "=+-@\t\r'";
 
-    /// <summary>Parses the CSV. Throws <see cref="NoteImportException"/> for malformed CSV or unparseable cells.</summary>
-    public static IReadOnlyList<ImportedNote> Read(string csv)
+    /// <summary>
+    /// Parses the CSV. Throws <see cref="NoteImportException"/> for malformed CSV, unparseable cells, or more than
+    /// <paramref name="maxNotes"/> data rows (checked while parsing, so oversized files aren't fully expanded).
+    /// </summary>
+    public static IReadOnlyList<ImportedNote> Read(string csv, int maxNotes = int.MaxValue)
     {
-        var rows = Parse(csv);
+        var rows = Parse(csv, maxNotes);
         if (rows.Count == 0)
         {
             throw Error("Csv", "The CSV is empty; expected a header row.");
@@ -91,9 +94,26 @@ public static class NoteCsvReader
     private static NoteImportException Error(string key, string message) => new(new Dictionary<string, string[]> { [key] = [message] });
 
     /// <summary>Splits CSV into rows of fields. Accepts CRLF or LF line endings and quoted fields spanning lines.</summary>
-    private static List<List<string>> Parse(string csv)
+    private static List<List<string>> Parse(string csv, int maxNotes)
     {
         var rows = new List<List<string>>();
+
+        // Blank lines (e.g. a trailing newline in an edited file) carry no data.
+        void AddRow(List<string> completed)
+        {
+            if (completed is [""])
+            {
+                return;
+            }
+
+            if (rows.Count > maxNotes)
+            {
+                throw Error(nameof(NoteImportRequest.Notes), $"An import may contain at most {maxNotes} notes; split the file.");
+            }
+
+            rows.Add(completed);
+        }
+
         var row = new List<string>();
         var field = new StringBuilder();
         var i = 0;
@@ -148,7 +168,7 @@ public static class NoteCsvReader
                 case '\r' or '\n':
                     row.Add(field.ToString());
                     field.Clear();
-                    rows.Add(row);
+                    AddRow(row);
                     row = [];
                     atFieldStart = true;
                     i += c == '\r' && i + 1 < csv.Length && csv[i + 1] == '\n' ? 2 : 1;
@@ -166,11 +186,9 @@ public static class NoteCsvReader
         if (!atFieldStart || row.Count > 0)
         {
             row.Add(field.ToString());
-            rows.Add(row);
+            AddRow(row);
         }
 
-        // Blank lines (e.g. a trailing newline in an edited file) carry no data.
-        rows.RemoveAll(r => r is [""]);
         return rows;
     }
 }
