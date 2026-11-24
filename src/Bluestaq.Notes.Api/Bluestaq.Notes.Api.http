@@ -1,0 +1,50 @@
+@host = http://localhost:5188
+
+### Register
+POST {{host}}/api/auth/register
+Content-Type: application/json
+
+{ "username": "alice", "password": "password123" }
+
+### Login (copy "token" from the response into @token below; browsers use the session cookie instead)
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{ "username": "alice", "password": "password123" }
+
+###
+@token = paste-token-here
+
+### Current user
+GET {{host}}/api/auth/me
+Authorization: Bearer {{token}}
+
+### List notes
+GET {{host}}/api/notes?page=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### Create note
+POST {{host}}/api/notes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "title": "Groceries", "content": "Milk, eggs" }
+
+### Get note
+GET {{host}}/api/notes/1
+Authorization: Bearer {{token}}
+
+### Update note
+PUT {{host}}/api/notes/1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "title": "Groceries", "content": "Milk, eggs, bread" }
+
+### Delete note
+DELETE {{host}}/api/notes/1
+Authorization: Bearer {{token}}
+
+### Logout
+POST {{host}}/api/auth/logout
+Authorization: Bearer {{token}}
