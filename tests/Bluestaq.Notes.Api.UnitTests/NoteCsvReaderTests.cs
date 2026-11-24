@@ -63,6 +63,7 @@ public sealed class NoteCsvReaderTests
     [InlineData("Id,Content\n1,C", "Csv")]
     [InlineData("Title,Content\n\"unterminated,C", "Csv")]
     [InlineData("Title,Content\n\"T\"x,C", "Csv")]
+    [InlineData("Title,Content\nT\"x,C", "Csv")]
     [InlineData("Title,Content\nT,C,extra", "Notes[0]")]
     [InlineData("Id,Title,Content\nabc,T,C", "Notes[0].Id")]
     [InlineData("Id,Title,Content\n-1,T,C", "Notes[0].Id")]

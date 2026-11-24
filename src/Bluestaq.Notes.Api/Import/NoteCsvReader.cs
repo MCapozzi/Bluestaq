@@ -153,6 +153,8 @@ public static class NoteCsvReader
                     atFieldStart = true;
                     i += c == '\r' && i + 1 < csv.Length && csv[i + 1] == '\n' ? 2 : 1;
                     break;
+                case '"':
+                    throw Error("Csv", $"Unexpected quote in an unquoted field in row {rows.Count + 1}.");
                 default:
                     field.Append(c);
                     atFieldStart = false;
