@@ -80,6 +80,36 @@ Content-Type: application/json
 
 { "username": "bob" }
 
+### Make a user an editor (or "Read" to downgrade)
+POST {{host}}/api/notes/1/shares
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "username": "bob", "permission": "Edit" }
+
+### Editor: ask the owner to share a note
+POST {{host}}/api/notes/1/share-requests
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "username": "carol", "permission": "Read" }
+
+### A note's share requests
+GET {{host}}/api/notes/1/share-requests?status=Pending
+Authorization: Bearer {{token}}
+
+### Pending share requests on all my notes
+GET {{host}}/api/notes/share-requests
+Authorization: Bearer {{token}}
+
+### Approve a share request
+POST {{host}}/api/notes/1/share-requests/1/approve
+Authorization: Bearer {{token}}
+
+### Reject a share request
+POST {{host}}/api/notes/1/share-requests/1/reject
+Authorization: Bearer {{token}}
+
 ### See who a note is shared with
 GET {{host}}/api/notes/1/sharing
 Authorization: Bearer {{token}}

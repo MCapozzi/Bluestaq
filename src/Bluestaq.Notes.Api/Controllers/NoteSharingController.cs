@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Bluestaq.Notes.Api.Controllers;
 
-/// <summary>Owner-only management of a note's visibility and the users it is shared with.</summary>
+/// <summary>Owner-only management of a note's visibility and the users it is shared with (editors can view it).</summary>
 [ApiController]
 [Route("api/notes/{id:long}")]
 public sealed class NoteSharingController(NotesDbContext db, TimeProvider clock) : ControllerBase
@@ -18,7 +18,7 @@ public sealed class NoteSharingController(NotesDbContext db, TimeProvider clock)
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(long id, CancellationToken ct)
     {
-        var (note, error) = await NoteAccessGuard.FindOwnedAsync(this, db, id, ct);
+        var (note, error) = await NoteAccessGuard.FindEditableAsync(this, db, id, ct);
         return note is null ? error! : Ok(await ToResponseAsync(note, ct));
     }
 
@@ -39,7 +39,7 @@ public sealed class NoteSharingController(NotesDbContext db, TimeProvider clock)
         return Ok(await ToResponseAsync(note, ct));
     }
 
-    /// <summary>Grants a user read access. Idempotent.</summary>
+    /// <summary>Grants a user read or edit access, or changes the permission of an existing share. Idempotent.</summary>
     [HttpPost("shares")]
     [ProducesResponseType<NoteSharingResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -64,9 +64,25 @@ public sealed class NoteSharingController(NotesDbContext db, TimeProvider clock)
             return Problem(statusCode: StatusCodes.Status400BadRequest, title: "Owners already have access to their notes.");
         }
 
-        if (!await db.NoteShares.AnyAsync(s => s.NoteId == id && s.UserId == target.Id, ct))
+        var existing = await db.NoteShares.SingleOrDefaultAsync(s => s.NoteId == id && s.UserId == target.Id, ct);
+        if (existing is not null)
         {
-            db.NoteShares.Add(new NoteShare { NoteId = id, UserId = target.Id, SharedAt = clock.GetUtcNow().UtcDateTime, SharedByUserId = User.GetUserId() });
+            if (request.Permission is { } permission && permission != existing.Permission)
+            {
+                existing.Permission = permission;
+                await db.SaveChangesAsync(ct);
+            }
+        }
+        else
+        {
+            db.NoteShares.Add(new NoteShare
+            {
+                NoteId = id,
+                UserId = target.Id,
+                SharedAt = clock.GetUtcNow().UtcDateTime,
+                SharedByUserId = User.GetUserId(),
+                Permission = request.Permission ?? SharePermission.Read,
+            });
             try
             {
                 await db.SaveChangesAsync(ct);
@@ -116,7 +132,7 @@ public sealed class NoteSharingController(NotesDbContext db, TimeProvider clock)
         var shares = await db.NoteShares.AsNoTracking()
             .Where(s => s.NoteId == note.Id)
             .OrderBy(s => s.User!.Username)
-            .Select(s => new NoteShareResponse(s.UserId, s.User!.Username, s.SharedAt))
+            .Select(s => new NoteShareResponse(s.UserId, s.User!.Username, s.SharedAt, s.Permission))
             .ToListAsync(ct);
         return new NoteSharingResponse(note.Id, note.Visibility, shares);
     }

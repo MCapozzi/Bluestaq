@@ -83,11 +83,12 @@ public sealed class AlertTests : IAsyncLifetime
         Assert.All(updates, a => Assert.Equal(2, a.Occurrences));
         Assert.All(updates, a => Assert.True(a.LastOccurredAt > a.FirstOccurredAt));
 
-        // An admin (or anyone) editing is the actor and isn't alerted, but the owner is not a share and isn't either.
+        // Someone else editing (an editor or an admin) is the actor and isn't alerted; the owner is.
         await EditAsync(_note.Id, _bob, "by bob");
         var bobUpdate = (await AlertsAsync()).Single(a => a.Kind == NoteAlertKind.Updated && a.RecipientUserId == _carol);
         Assert.Equal(_bob, bobUpdate.ActorUserId);
-        Assert.DoesNotContain(await AlertsAsync(), a => a.RecipientUserId == _alice);
+        Assert.DoesNotContain(await AlertsAsync(), a => a.RecipientUserId == _bob && a.ActorUserId == _bob);
+        Assert.Equal(_bob, (await AlertsAsync()).Single(a => a.RecipientUserId == _alice).ActorUserId);
     }
 
     [Fact]

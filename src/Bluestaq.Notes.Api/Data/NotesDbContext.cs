@@ -10,6 +10,7 @@ public sealed class NotesDbContext(DbContextOptions<NotesDbContext> options) : D
     public DbSet<Note> Notes => Set<Note>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<NoteShare> NoteShares => Set<NoteShare>();
+    public DbSet<ShareRequest> ShareRequests => Set<ShareRequest>();
     public DbSet<AdminAuditEntry> AdminAuditLog => Set<AdminAuditEntry>();
     public DbSet<NoteAlert> NoteAlerts => Set<NoteAlert>();
 
@@ -61,6 +62,17 @@ public sealed class NotesDbContext(DbContextOptions<NotesDbContext> options) : D
             e.HasOne(s => s.Note).WithMany(n => n.Shares).HasForeignKey(s => s.NoteId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(s => s.UserId);
+        });
+
+        modelBuilder.Entity<ShareRequest>(e =>
+        {
+            e.ToTable("note_share_requests");
+            e.HasOne(r => r.Note).WithMany().HasForeignKey(r => r.NoteId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(r => r.RequestedBy).WithMany().HasForeignKey(r => r.RequestedByUserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(r => r.TargetUser).WithMany().HasForeignKey(r => r.TargetUserId).OnDelete(DeleteBehavior.Cascade);
+            // Approving or rejecting checks the status it read, so two decisions on one request can't both succeed.
+            e.Property(r => r.Status).IsConcurrencyToken();
+            e.HasIndex(r => new { r.NoteId, r.Status });
         });
 
         modelBuilder.Entity<NoteAlert>(e =>

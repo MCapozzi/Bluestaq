@@ -9,8 +9,9 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace Bluestaq.Notes.Api.Alerts;
 
 /// <summary>
-/// Queues alerts in the same transaction as the change that causes them: a new share alerts its user, and a
-/// title/content edit alerts every user the note is shared with. The actor is never alerted about their own change.
+/// Queues alerts in the same transaction as the change that causes them: a new share alerts its user, a title/content
+/// edit alerts every user the note is shared with and its owner, and a share request alerts the owner. The actor is
+/// never alerted about their own change.
 /// </summary>
 public sealed class AlertInterceptor(ICurrentUserAccessor currentUser, TimeProvider clock, ILogger<AlertInterceptor> logger)
     : SaveChangesInterceptor
@@ -108,23 +109,39 @@ public sealed class AlertInterceptor(ICurrentUserAccessor currentUser, TimeProvi
             return;
         }
 
-        var wanted = new List<(long RecipientId, long NoteId, NoteAlertKind Kind)>();
+        var wanted = new List<(long RecipientId, long NoteId, NoteAlertKind Kind, long ActorId)>();
 
+        // A share created by approving an editor's request is reported as shared by that editor.
         foreach (var share in db.ChangeTracker.Entries<NoteShare>().Where(e => e.State == EntityState.Added))
         {
-            wanted.Add((share.Entity.UserId, share.Entity.NoteId, NoteAlertKind.Shared));
+            wanted.Add((share.Entity.UserId, share.Entity.NoteId, NoteAlertKind.Shared, share.Entity.SharedByUserId ?? actorId));
         }
 
-        var editedNoteIds = db.ChangeTracker.Entries<Note>()
+        var requestedNoteIds = db.ChangeTracker.Entries<ShareRequest>()
+            .Where(e => e.State == EntityState.Added)
+            .Select(e => e.Entity.NoteId)
+            .Distinct()
+            .ToList();
+        if (requestedNoteIds.Count > 0)
+        {
+            var ownersQuery = db.Notes.AsNoTracking().Where(n => requestedNoteIds.Contains(n.Id)).Select(n => new { n.Id, n.OwnerId });
+            var owners = sync ? ownersQuery.ToList() : await ownersQuery.ToListAsync(ct);
+            wanted.AddRange(owners.Select(n => (n.OwnerId, n.Id, NoteAlertKind.ShareRequested, actorId)));
+        }
+
+        // Edits alert everyone the note is shared with, plus the owner when an editor or administrator made them.
+        var edited = db.ChangeTracker.Entries<Note>()
             .Where(e => e.State == EntityState.Modified
                 && (Changed(e.Property(n => n.Title)) || Changed(e.Property(n => n.Content))))
-            .Select(e => e.Entity.Id)
+            .Select(e => e.Entity)
             .ToList();
-        if (editedNoteIds.Count > 0)
+        if (edited.Count > 0)
         {
+            var editedNoteIds = edited.Select(n => n.Id).ToList();
             var sharesQuery = db.NoteShares.AsNoTracking().Where(s => editedNoteIds.Contains(s.NoteId)).Select(s => new { s.UserId, s.NoteId });
             var shares = sync ? sharesQuery.ToList() : await sharesQuery.ToListAsync(ct);
-            wanted.AddRange(shares.Select(s => (s.UserId, s.NoteId, NoteAlertKind.Updated)));
+            wanted.AddRange(shares.Select(s => (s.UserId, s.NoteId, NoteAlertKind.Updated, actorId)));
+            wanted.AddRange(edited.Select(n => (n.OwnerId, n.Id, NoteAlertKind.Updated, actorId)));
         }
 
         wanted = wanted.Where(w => w.RecipientId != actorId).Distinct().ToList();
@@ -139,12 +156,12 @@ public sealed class AlertInterceptor(ICurrentUserAccessor currentUser, TimeProvi
         var now = clock.GetUtcNow().UtcDateTime;
         now = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMicrosecond));
 
-        foreach (var (recipientId, noteId, kind) in wanted)
+        foreach (var (recipientId, noteId, kind, alertActorId) in wanted)
         {
             var existing = pending.FirstOrDefault(a => a.RecipientUserId == recipientId && a.NoteId == noteId && a.Kind == kind);
             if (existing is not null)
             {
-                existing.ActorUserId = actorId;
+                existing.ActorUserId = alertActorId;
                 existing.LastOccurredAt = now;
                 existing.Occurrences++;
             }
@@ -155,7 +172,7 @@ public sealed class AlertInterceptor(ICurrentUserAccessor currentUser, TimeProvi
                     RecipientUserId = recipientId,
                     NoteId = noteId,
                     Kind = kind,
-                    ActorUserId = actorId,
+                    ActorUserId = alertActorId,
                     FirstOccurredAt = now,
                     LastOccurredAt = now,
                 });

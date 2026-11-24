@@ -10,6 +10,9 @@ public enum NoteAlertKind
 
     /// <summary>A note shared with the recipient was edited.</summary>
     Updated = 1,
+
+    /// <summary>An editor asked to share the recipient's note with another user.</summary>
+    ShareRequested = 2,
 }
 
 /// <summary>
