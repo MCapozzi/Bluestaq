@@ -148,8 +148,9 @@ multi-instance deployments work without sticky sessions.
 ### Administrators
 
 Users have a `role`: `User` (default) or `Administrator`. Registration always creates `User`s. The first administrator
-comes from `Admin:BootstrapUsername`/`Admin:BootstrapPassword` at startup (created if missing, promoted if it exists;
-an existing password is never changed); after that, administrators promote or demote others via `/api/admin`. A role
+comes from `Admin:BootstrapUsername`/`Admin:BootstrapPassword` at startup (created if missing; an existing regular
+account is promoted only if the configured password matches it, and startup fails otherwise; passwords are never
+changed); after that, administrators promote or demote others via `/api/admin`. A role
 change takes effect on the user's next request.
 
 Administrators can read, update, delete, export and change sharing on **any** note through the normal `/api/notes`

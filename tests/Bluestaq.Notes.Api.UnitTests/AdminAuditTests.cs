@@ -226,16 +226,34 @@ public sealed class AdminBootstrapperTests : IDisposable
     }
 
     [Fact]
-    public async Task Promotes_an_existing_user_without_changing_their_password()
+    public async Task Promotes_an_existing_user_only_when_the_configured_password_matches()
     {
-        await _db.AddUserAsync("alice");
+        var alice = await _db.AddUserAsync("alice");
+        await using (var setup = _db.CreateContext())
+        {
+            var user = await setup.Users.SingleAsync();
+            user.PasswordHash = _hasher.HashPassword(user, "alice-password");
+            await setup.SaveChangesAsync();
+        }
 
-        await RunAsync("alice", null);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => RunAsync("alice", null));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => RunAsync("alice", "wrong-password"));
+        await RunAsync("alice", "alice-password");
 
         await using var ctx = _db.CreateContext();
         var stored = await ctx.Users.SingleAsync();
-        Assert.Equal(UserRole.Administrator, stored.Role);
-        Assert.Equal("x", stored.PasswordHash);
+        Assert.Equal((alice.Id, UserRole.Administrator), (stored.Id, stored.Role));
+        Assert.Equal(PasswordVerificationResult.Success, _hasher.VerifyHashedPassword(stored, stored.PasswordHash, "alice-password"));
+    }
+
+    [Fact]
+    public async Task An_existing_administrator_is_kept_without_rechecking_the_password()
+    {
+        await RunAsync("admin", "admin-password");
+
+        var admin = await RunAsync("admin", "changed-in-config");
+
+        Assert.Equal(UserRole.Administrator, admin!.Role);
     }
 
     [Theory]

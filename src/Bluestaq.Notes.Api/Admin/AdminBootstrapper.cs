@@ -13,7 +13,11 @@ public sealed class AdminBootstrapOptions
     public string? BootstrapPassword { get; set; }
 }
 
-/// <summary>Ensures the configured bootstrap account exists and is an administrator. Runs once at startup.</summary>
+/// <summary>
+/// Ensures the configured bootstrap account exists and is an administrator. Runs once at startup. An existing
+/// non-administrator account is only promoted if the configured password matches it, so whoever self-registered the
+/// username can't gain administrator access.
+/// </summary>
 public static class AdminBootstrapper
 {
     public static async Task<User?> EnsureAsync(
@@ -37,6 +41,14 @@ public static class AdminBootstrapper
             user = new User { Username = username, PasswordHash = "", CreatedAt = clock.GetUtcNow().UtcDateTime };
             user.PasswordHash = hasher.HashPassword(user, options.BootstrapPassword);
             db.Users.Add(user);
+        }
+
+        else if (user.Role != UserRole.Administrator
+            && (string.IsNullOrEmpty(options.BootstrapPassword)
+                || hasher.VerifyHashedPassword(user, user.PasswordHash, options.BootstrapPassword) == PasswordVerificationResult.Failed))
+        {
+            throw new InvalidOperationException(
+                $"'{username}' already exists as a regular user and Admin:BootstrapPassword doesn't match it; refusing to promote it.");
         }
 
         user.Role = UserRole.Administrator;
