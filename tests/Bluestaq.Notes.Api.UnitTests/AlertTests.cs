@@ -36,7 +36,7 @@ public sealed class AlertTests : IAsyncLifetime
     {
         _db.CurrentUser.UserId = actor;
         await using var ctx = _db.CreateContext();
-        ctx.NoteShares.Add(new NoteShare { NoteId = noteId, UserId = withUser, SharedAt = _db.Clock.GetUtcNow().UtcDateTime });
+        ctx.NoteShares.Add(new NoteShare { NoteId = noteId, UserId = withUser, SharedAt = _db.Clock.GetUtcNow().UtcDateTime, SharedByUserId = actor });
         await ctx.SaveChangesAsync();
     }
 
@@ -183,6 +183,24 @@ public sealed class AlertTests : IAsyncLifetime
 
         // Delivered rows older than the interval are pruned.
         Assert.DoesNotContain(await AlertsAsync(), a => a.DeliveredAt != null);
+    }
+
+    [Fact]
+    public async Task Edit_only_alerts_name_whoever_shared_the_note()
+    {
+        // carol stands in for an administrator sharing alice's note.
+        await ShareAsync(_note.Id, _bob, _carol);
+        await using var ctx = _db.CreateContext();
+        var service = Service(ctx);
+        Assert.Equal("carol", (await service.TakePendingAsync(_bob, default))!.Message.Alerts.Single().SharedBy);
+        await service.MarkDeliveredAsync((await service.TakePendingAsync(_bob, default))!, default);
+
+        _db.Clock.Advance(TimeSpan.FromMinutes(30));
+        await EditAsync(_note.Id, _alice, "v2");
+
+        var item = Assert.Single((await service.TakePendingAsync(_bob, default))!.Message.Alerts);
+        Assert.Equal([NoteAlertKind.Updated], item.Events);
+        Assert.Equal(("carol", "alice"), (item.SharedBy, item.UpdatedBy));
     }
 
     [Fact]

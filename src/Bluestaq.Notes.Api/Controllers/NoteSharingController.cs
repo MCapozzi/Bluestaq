@@ -1,3 +1,4 @@
+using Bluestaq.Notes.Api.Auth;
 using Bluestaq.Notes.Api.Contracts;
 using Bluestaq.Notes.Api.Data;
 using Bluestaq.Notes.Api.Domain;
@@ -65,7 +66,7 @@ public sealed class NoteSharingController(NotesDbContext db, TimeProvider clock)
 
         if (!await db.NoteShares.AnyAsync(s => s.NoteId == id && s.UserId == target.Id, ct))
         {
-            db.NoteShares.Add(new NoteShare { NoteId = id, UserId = target.Id, SharedAt = clock.GetUtcNow().UtcDateTime });
+            db.NoteShares.Add(new NoteShare { NoteId = id, UserId = target.Id, SharedAt = clock.GetUtcNow().UtcDateTime, SharedByUserId = User.GetUserId() });
             try
             {
                 await db.SaveChangesAsync(ct);

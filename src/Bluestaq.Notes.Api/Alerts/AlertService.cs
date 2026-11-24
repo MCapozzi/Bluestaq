@@ -56,7 +56,13 @@ public sealed class AlertService(NotesDbContext db, TimeProvider clock, IOptions
             }
         }
 
-        var userIds = notes.Values.SelectMany(n => new[] { n.OwnerId, n.UpdatedByUserId })
+        // Who shared each note with this user, for batches that only contain edits.
+        var sharers = await db.NoteShares.AsNoTracking()
+            .Where(s => s.UserId == userId && noteIds.Contains(s.NoteId))
+            .ToDictionaryAsync(s => s.NoteId, s => s.SharedByUserId, ct);
+        long SharerOf(long noteId, long ownerId) => sharers.GetValueOrDefault(noteId) ?? ownerId;
+
+        var userIds = notes.Values.SelectMany(n => new[] { SharerOf(n.Id, n.OwnerId), n.UpdatedByUserId })
             .Concat(pending.Select(a => a.ActorUserId))
             .Distinct()
             .ToList();
@@ -74,7 +80,7 @@ public sealed class AlertService(NotesDbContext db, TimeProvider clock, IOptions
                 return new NoteAlertItem(
                     note.Id,
                     note.Title,
-                    NameOf(share?.ActorUserId ?? note.OwnerId),
+                    NameOf(share?.ActorUserId ?? SharerOf(note.Id, note.OwnerId)),
                     NameOf(note.UpdatedByUserId),
                     note.UpdatedAt,
                     g.Select(a => a.Kind).Distinct().Order().ToList(),

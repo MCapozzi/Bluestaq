@@ -20,6 +20,9 @@ public sealed class NoteShare
     public long UserId { get; set; }
     public User? User { get; set; }
     public DateTime SharedAt { get; set; }
+
+    /// <summary>Who created the share (the owner or an administrator); null for shares created before this was recorded.</summary>
+    public long? SharedByUserId { get; set; }
 }
 
 public static class NoteAccess

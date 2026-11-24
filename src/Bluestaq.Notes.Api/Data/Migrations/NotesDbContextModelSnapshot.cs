@@ -175,6 +175,9 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                     b.Property<DateTime>("SharedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<long?>("SharedByUserId")
+                        .HasColumnType("bigint");
+
                     b.HasKey("NoteId", "UserId");
 
                     b.HasIndex("UserId");
