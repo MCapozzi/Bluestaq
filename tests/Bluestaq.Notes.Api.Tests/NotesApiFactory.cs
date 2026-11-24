@@ -9,6 +9,8 @@ namespace Bluestaq.Notes.Api.Tests;
 /// <summary>Hosts the API in-memory against a throwaway MySQL container.</summary>
 public sealed class NotesApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
+    public const int RateLimitPermits = 100_000;
+
     private readonly MySqlContainer _mysql = new MySqlBuilder(Environment.GetEnvironmentVariable("NOTES_TEST_MYSQL_IMAGE") ?? "mysql:8.4").Build();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -16,6 +18,7 @@ public sealed class NotesApiFactory : WebApplicationFactory<Program>, IAsyncLife
         builder.UseEnvironment("Testing");
         builder.UseSetting("ConnectionStrings:Notes", _mysql.GetConnectionString());
         builder.UseSetting("Database:MigrateOnStartup", "true");
+        builder.UseSetting("RateLimiting:Auth:PermitLimit", RateLimitPermits.ToString());
     }
 
     public NotesDbContext CreateDbContext() =>

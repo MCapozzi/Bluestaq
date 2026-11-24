@@ -5,6 +5,8 @@ using Bluestaq.Notes.Api.Domain;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Bluestaq.Notes.Api.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -23,6 +25,7 @@ public sealed class AuthController(
     private static readonly string DummyHash = new PasswordHasher<User>().HashPassword(null!, "not-a-real-password");
 
     [AllowAnonymous]
+    [EnableRateLimiting(AuthRateLimitOptions.PolicyName)]
     [HttpPost("register")]
     [ProducesResponseType<UserResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -52,6 +55,7 @@ public sealed class AuthController(
     }
 
     [AllowAnonymous]
+    [EnableRateLimiting(AuthRateLimitOptions.PolicyName)]
     [HttpPost("login")]
     [ProducesResponseType<SessionResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
