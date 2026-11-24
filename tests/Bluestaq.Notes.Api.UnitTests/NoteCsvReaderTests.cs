@@ -24,6 +24,7 @@ public sealed class NoteCsvReaderTests
             Exported(4, "@user", "\tindented"),
             Exported(5, "+x", "\rcr"),
             Exported(6, "'already quoted", ""),
+            Exported(7, "'=not a guard", "''two"),
         ];
 
         var imported = NoteCsvReader.Read(NoteCsvWriter.Write(notes));
@@ -85,6 +86,7 @@ public sealed class NoteCsvReaderTests
     [InlineData("'=x", "=x")]
     [InlineData("'\tx", "\tx")]
     [InlineData("'abc", "'abc")]
+    [InlineData("''abc", "'abc")]
     [InlineData("'", "'")]
     [InlineData("plain", "plain")]
     public void Unguard_only_strips_the_writers_formula_guard(string value, string expected) =>

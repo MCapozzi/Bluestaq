@@ -36,6 +36,7 @@ public sealed class NoteCsvWriterTests
     [InlineData("+1", "'+1")]
     [InlineData("-1", "'-1")]
     [InlineData("@cmd", "'@cmd")]
+    [InlineData("'quoted", "''quoted")]
     [InlineData("\tx", "'\tx")]
     [InlineData("=a,b", "\"'=a,b\"")]
     public void Escape_quotes_and_neutralizes_formulas(string input, string expected)

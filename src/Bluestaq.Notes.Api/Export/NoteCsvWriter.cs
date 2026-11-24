@@ -31,7 +31,8 @@ public static class NoteCsvWriter
     public static string Escape(string value)
     {
         // Neutralize spreadsheet formula injection: a leading =, +, -, @, tab or CR would be evaluated by Excel/Sheets.
-        if (value.Length > 0 && value[0] is '=' or '+' or '-' or '@' or '\t' or '\r')
+        // A leading ' is guarded too, so the importer can tell the guard apart from an apostrophe in the note.
+        if (value.Length > 0 && value[0] is '=' or '+' or '-' or '@' or '\t' or '\r' or '\'')
         {
             value = "'" + value;
         }

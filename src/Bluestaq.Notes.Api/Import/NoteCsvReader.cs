@@ -9,12 +9,12 @@ namespace Bluestaq.Notes.Api.Import;
 /// <summary>
 /// Reads the RFC 4180 CSV written by <see cref="NoteCsvWriter"/>. Columns are matched by header name
 /// (case-insensitive); <c>Title</c> and <c>Content</c> are required, <c>Id</c> and <c>Visibility</c> are optional, and
-/// any other column is ignored. The writer's spreadsheet-formula guard (a <c>'</c> before a leading = + - @ tab or CR)
+/// any other column is ignored. The writer's spreadsheet-formula guard (a <c>'</c> before a leading = + - @ tab CR or <c>'</c>)
 /// is removed again.
 /// </summary>
 public static class NoteCsvReader
 {
-    private const string FormulaChars = "=+-@\t\r";
+    private const string GuardedChars = "=+-@\t\r'";
 
     /// <summary>Parses the CSV. Throws <see cref="NoteImportException"/> for malformed CSV or unparseable cells.</summary>
     public static IReadOnlyList<ImportedNote> Read(string csv)
@@ -78,7 +78,7 @@ public static class NoteCsvReader
 
     /// <summary>Reverses <see cref="NoteCsvWriter.Escape"/>'s formula guard.</summary>
     public static string Unguard(string value) =>
-        value.Length > 1 && value[0] == '\'' && FormulaChars.Contains(value[1]) ? value[1..] : value;
+        value.Length > 1 && value[0] == '\'' && GuardedChars.Contains(value[1]) ? value[1..] : value;
 
     /// <summary>Accepts only a visibility name (any case), not numbers or flag combinations like "Private, Public".</summary>
     private static bool TryParseVisibility(string value, out NoteVisibility visibility)
