@@ -7,7 +7,7 @@ services:
       MYSQL_USER: notes
       MYSQL_PASSWORD: notespw
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
@@ -26,7 +26,7 @@ services:
       ConnectionStrings__Notes: "Server=mysql;Port=3306;Database=notes;User=notes;Password=notespw;"
       Database__MigrateOnStartup: "true"
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
 
 volumes:
   mysql-data:
