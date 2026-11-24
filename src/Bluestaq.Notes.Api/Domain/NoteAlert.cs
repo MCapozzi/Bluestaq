@@ -20,8 +20,8 @@ public sealed class NoteAlert
 {
     public long Id { get; set; }
     public long RecipientUserId { get; set; }
+    /// <summary>No foreign key: delivered rows must outlive a deleted note, since they enforce the push interval.</summary>
     public long NoteId { get; set; }
-    public Note? Note { get; set; }
     public NoteAlertKind Kind { get; set; }
 
     /// <summary>Who shared or updated the note (latest occurrence).</summary>

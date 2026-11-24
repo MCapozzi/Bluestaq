@@ -261,19 +261,11 @@ namespace Bluestaq.Notes.Api.Data.Migrations
 
             modelBuilder.Entity("Bluestaq.Notes.Api.Domain.NoteAlert", b =>
                 {
-                    b.HasOne("Bluestaq.Notes.Api.Domain.Note", "Note")
-                        .WithMany()
-                        .HasForeignKey("NoteId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
                     b.HasOne("Bluestaq.Notes.Api.Domain.User", null)
                         .WithMany()
                         .HasForeignKey("RecipientUserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Note");
                 });
 
             modelBuilder.Entity("Bluestaq.Notes.Api.Domain.NoteShare", b =>

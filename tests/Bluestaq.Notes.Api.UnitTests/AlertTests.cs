@@ -186,6 +186,24 @@ public sealed class AlertTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Deleting_a_note_does_not_reset_the_push_interval()
+    {
+        var other = await _db.AddNoteAsync(_alice, "Other");
+        await ShareAsync(_note.Id, _bob, _alice);
+        await using var ctx = _db.CreateContext();
+        var service = Service(ctx);
+        await service.MarkDeliveredAsync((await service.TakePendingAsync(_bob, default))!, default);
+
+        _db.CurrentUser.UserId = _alice;
+        await ctx.Notes.Where(n => n.Id == _note.Id).ExecuteDeleteAsync();
+        await ShareAsync(other.Id, _bob, _alice);
+
+        Assert.Null(await service.TakePendingAsync(_bob, default));
+        _db.Clock.Advance(TimeSpan.FromMinutes(30));
+        Assert.Equal(other.Id, Assert.Single((await service.TakePendingAsync(_bob, default))!.Message.Alerts).NoteId);
+    }
+
+    [Fact]
     public async Task An_event_merged_after_the_batch_was_built_stays_pending()
     {
         await ShareAsync(_note.Id, _bob, _alice);
