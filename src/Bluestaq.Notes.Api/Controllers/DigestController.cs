@@ -23,15 +23,13 @@ public sealed class DigestController(NotesDbContext db, DigestService digests, T
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Update(UpdateDigestRequest request, CancellationToken ct)
     {
-        var user = await CurrentUserAsync(ct, track: true);
-        user.DigestFrequency = request.Frequency!.Value;
-        if (user.DigestFrequency == DigestFrequency.None)
-        {
-            user.DigestLastSentAt = null;
-        }
-
-        await db.SaveChangesAsync(ct);
-        return Ok(ToResponse(user));
+        // Written directly, not via change tracking: a digest claimed after the user was loaded must still be cleared.
+        var frequency = request.Frequency!.Value;
+        var users = db.Users.Where(u => u.Id == User.GetUserId());
+        await (frequency == DigestFrequency.None
+            ? users.ExecuteUpdateAsync(s => s.SetProperty(u => u.DigestFrequency, frequency).SetProperty(u => u.DigestLastSentAt, (DateTime?)null), ct)
+            : users.ExecuteUpdateAsync(s => s.SetProperty(u => u.DigestFrequency, frequency), ct));
+        return Ok(ToResponse(await CurrentUserAsync(ct)));
     }
 
     /// <summary>What the next digest would contain right now, without sending it.</summary>
@@ -44,11 +42,10 @@ public sealed class DigestController(NotesDbContext db, DigestService digests, T
             user.Id, user.Username, user.DigestFrequency, user.DigestLastSentAt, clock.GetUtcNow().UtcDateTime, ct));
     }
 
-    private Task<User> CurrentUserAsync(CancellationToken ct, bool track = false)
+    private Task<User> CurrentUserAsync(CancellationToken ct)
     {
         var userId = User.GetUserId();
-        var users = track ? db.Users : db.Users.AsNoTracking();
-        return users.SingleAsync(u => u.Id == userId, ct);
+        return db.Users.AsNoTracking().SingleAsync(u => u.Id == userId, ct);
     }
 
     private DigestSettingsResponse ToResponse(User user)

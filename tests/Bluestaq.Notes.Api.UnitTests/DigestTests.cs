@@ -247,6 +247,21 @@ public sealed class DigestTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Opting_out_clears_a_digest_claimed_after_the_user_was_loaded()
+    {
+        await SetFrequencyAsync(_bob, DigestFrequency.Daily);
+        await using var ctx = _db.CreateContext();
+        await ctx.Users.SingleAsync(u => u.Id == _bob);
+        await SendDueAsync();
+
+        var settings = Assert.IsType<DigestSettingsResponse>(Assert.IsType<OkObjectResult>(
+            await Controller(ctx, _bob).Update(new UpdateDigestRequest(DigestFrequency.None), default)).Value);
+
+        Assert.Null(settings.LastSentAt);
+        Assert.Null((await UserAsync(_bob)).DigestLastSentAt);
+    }
+
+    [Fact]
     public async Task Controller_preview_shows_the_next_digest_without_sending()
     {
         await ShareAsync(_plan.Id, _bob, _alice);
