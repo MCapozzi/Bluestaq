@@ -143,7 +143,8 @@ Alerts are stored in `note_alerts` as they happen and pushed **at most once per 
 pushed to you in the last 30 minutes, pending alerts go out within a few seconds; otherwise they are combined and sent
 when the 30 minutes are up. Alerts wait in the database while you're offline and are delivered when you connect.
 Alerts for notes you can no longer read are dropped. A cookie-authenticated handshake is rejected with 403 unless its
-`Origin` is the API's own or listed in `Alerts:AllowedOrigins`. When your session ends (logout or expiry) the socket is closed
+`Origin` is the API's own or listed in `Alerts:AllowedOrigins` (behind a reverse proxy that rewrites `Host`, list the
+public origin there, e.g. `https://notes.example.com`). When your session ends (logout or expiry) the socket is closed
 with status `1008`.
 
 ```json
