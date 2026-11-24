@@ -1,6 +1,7 @@
 using Bluestaq.Notes.Api.Auth;
 using Bluestaq.Notes.Api.Data;
 using Bluestaq.Notes.Api.Domain;
+using Bluestaq.Notes.Api.Export;
 using Bluestaq.Notes.Api.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -16,9 +17,14 @@ if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("Connection string 'ConnectionStrings:Notes' is not configured.");
 }
 
-builder.Services.AddDbContext<NotesDbContext>(options => options.UseMySQL(connectionString));
-
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserAccessor, HttpContextCurrentUserAccessor>();
+builder.Services.AddScoped<AuditInterceptor>();
+builder.Services.AddDbContext<NotesDbContext>((sp, options) => options
+    .UseMySQL(connectionString)
+    .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
+builder.Services.AddScoped<NoteExporter>();
 builder.Services.Configure<SessionAuthOptions>(builder.Configuration.GetSection(SessionAuthOptions.SectionName));
 builder.Services.AddScoped<SessionService>();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();

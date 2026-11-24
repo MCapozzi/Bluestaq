@@ -10,4 +10,5 @@ public static class ValidationLimits
     public const int TitleMaxLength = 200;
     public const int ContentMaxLength = 100_000;
     public const int MaxPageSize = 100;
+    public const int MaxExportNoteIds = 1_000;
 }

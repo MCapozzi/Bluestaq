@@ -32,6 +32,9 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<long>("CreatedByUserId")
+                        .HasColumnType("bigint");
+
                     b.Property<long>("OwnerId")
                         .HasColumnType("bigint");
 
@@ -43,7 +46,12 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<long>("UpdatedByUserId")
+                        .HasColumnType("bigint");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "CreatedAt");
 
                     b.HasIndex("OwnerId", "UpdatedAt");
 

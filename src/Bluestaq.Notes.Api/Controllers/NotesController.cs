@@ -3,6 +3,7 @@ using Bluestaq.Notes.Api.Auth;
 using Bluestaq.Notes.Api.Contracts;
 using Bluestaq.Notes.Api.Data;
 using Bluestaq.Notes.Api.Domain;
+using Bluestaq.Notes.Api.Export;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,7 +15,7 @@ namespace Bluestaq.Notes.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/notes")]
-public sealed class NotesController(NotesDbContext db, TimeProvider clock) : ControllerBase
+public sealed class NotesController(NotesDbContext db, NoteExporter exporter) : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType<PagedResponse<NoteResponse>>(StatusCodes.Status200OK)]
@@ -29,7 +30,8 @@ public sealed class NotesController(NotesDbContext db, TimeProvider clock) : Con
             .OrderByDescending(n => n.UpdatedAt).ThenByDescending(n => n.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(n => new NoteResponse(n.Id, n.Title, n.Content, n.CreatedAt, n.UpdatedAt))
+            .Select(n => new NoteResponse(
+                n.Id, n.OwnerId, n.Title, n.Content, n.CreatedByUserId, n.CreatedAt, n.UpdatedByUserId, n.UpdatedAt))
             .ToListAsync(ct);
 
         return Ok(new PagedResponse<NoteResponse>(items, page, pageSize, total));
@@ -48,14 +50,12 @@ public sealed class NotesController(NotesDbContext db, TimeProvider clock) : Con
     [ProducesResponseType<NoteResponse>(StatusCodes.Status201Created)]
     public async Task<IActionResult> Create(NoteRequest request, CancellationToken ct)
     {
-        var now = clock.GetUtcNow().UtcDateTime;
+        // Audit fields (created/updated by and at) are stamped by AuditInterceptor.
         var note = new Note
         {
             OwnerId = User.GetUserId(),
             Title = request.Title,
             Content = request.Content,
-            CreatedAt = now,
-            UpdatedAt = now,
         };
         db.Notes.Add(note);
         await db.SaveChangesAsync(ct);
@@ -76,7 +76,6 @@ public sealed class NotesController(NotesDbContext db, TimeProvider clock) : Con
 
         note.Title = request.Title;
         note.Content = request.Content;
-        note.UpdatedAt = clock.GetUtcNow().UtcDateTime;
 
         // PUT is a full replacement: write every field so overlapping updates can't interleave fields.
         var entry = db.Entry(note);
@@ -94,6 +93,32 @@ public sealed class NotesController(NotesDbContext db, TimeProvider clock) : Con
     {
         var deleted = await OwnedNotes().Where(n => n.Id == id).ExecuteDeleteAsync(ct);
         return deleted == 0 ? NotFound() : NoContent();
+    }
+
+    /// <summary>
+    /// Bulk-exports the caller's notes selected by exactly one of: <c>noteIds</c>, <c>userId</c>, or a
+    /// <c>from</c>/<c>to</c> creation-date range. Returns JSON, or a CSV file when <c>format</c> is <c>csv</c>.
+    /// </summary>
+    [HttpPost("export")]
+    [ProducesResponseType<NoteExportResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK, "text/csv")]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> Export(NoteExportRequest request, CancellationToken ct)
+    {
+        var requesterId = User.GetUserId();
+        if (request.UserId is { } userId && userId != requesterId)
+        {
+            return Problem(statusCode: StatusCodes.Status403Forbidden, title: "You can only export your own notes.");
+        }
+
+        var export = await exporter.ExportAsync(requesterId, request, ct);
+        if (request.Format == ExportFormat.Csv)
+        {
+            var csv = System.Text.Encoding.UTF8.GetBytes(NoteCsvWriter.Write(export.Notes));
+            return File(csv, "text/csv; charset=utf-8", $"notes-export-{export.ExportedAt:yyyyMMddTHHmmssZ}.csv");
+        }
+
+        return Ok(export);
     }
 
     private IQueryable<Note> OwnedNotes()

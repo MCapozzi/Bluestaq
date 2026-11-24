@@ -33,6 +33,7 @@ public sealed class NotesDbContext(DbContextOptions<NotesDbContext> options) : D
             e.Property(n => n.Content).HasColumnType("mediumtext").IsRequired();
             e.HasOne(n => n.Owner).WithMany(u => u.Notes).HasForeignKey(n => n.OwnerId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(n => new { n.OwnerId, n.UpdatedAt });
+            e.HasIndex(n => new { n.OwnerId, n.CreatedAt });
         });
 
         modelBuilder.Entity<Session>(e =>
