@@ -91,6 +91,12 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("mediumtext");
 
+                    b.Property<DateTime>("ContentUpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long>("ContentUpdatedByUserId")
+                        .HasColumnType("bigint");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 

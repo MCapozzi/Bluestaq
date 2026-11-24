@@ -46,17 +46,30 @@ public sealed class AuditInterceptor(ICurrentUserAccessor currentUser, TimeProvi
                     entry.Entity.CreatedAt = now;
                     entry.Entity.UpdatedByUserId = creator;
                     entry.Entity.UpdatedAt = now;
+                    if (entry.Entity is Note added)
+                    {
+                        (added.ContentUpdatedByUserId, added.ContentUpdatedAt) = (creator, now);
+                    }
+
                     break;
 
                 case EntityState.Modified:
                     entry.Entity.UpdatedByUserId = RequireUserId();
                     entry.Entity.UpdatedAt = now;
+                    if (entry.Entity is Note note && (Changed(entry.Property(nameof(Note.Title))) || Changed(entry.Property(nameof(Note.Content)))))
+                    {
+                        (note.ContentUpdatedByUserId, note.ContentUpdatedAt) = (entry.Entity.UpdatedByUserId, now);
+                    }
+
                     entry.Property(e => e.CreatedByUserId).IsModified = false;
                     entry.Property(e => e.CreatedAt).IsModified = false;
                     break;
             }
         }
     }
+
+    private static bool Changed(Microsoft.EntityFrameworkCore.ChangeTracking.PropertyEntry property) =>
+        property.IsModified && !Equals(property.OriginalValue, property.CurrentValue);
 
     private long RequireUserId() =>
         currentUser.UserId ?? throw new InvalidOperationException("Cannot save auditable entities without an authenticated user.");

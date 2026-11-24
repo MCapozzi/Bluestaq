@@ -181,8 +181,8 @@ Users are **opted out** by default and opt in with `PUT /api/digest { "frequency
 `"None"` opts out again. A background job emails each opted-in user once per day or week with:
 
 - **Shared with you**: notes shared with you since your last digest.
-- **Changed since they were shared with you**: shared notes someone else edited since your last digest (and after
-  sharing them with you).
+- **Changed since they were shared with you**: shared notes whose title or content someone else edited since your last
+  digest (and after sharing them with you). Visibility changes don't count.
 
 Each entry has the note's title and ID, who shared it and when, and when and by whom it was last updated. The first
 digest after opting in goes out within one poll interval and lists every note currently shared with you; later ones cover

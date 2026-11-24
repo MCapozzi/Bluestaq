@@ -19,7 +19,8 @@ public sealed class DigestService(NotesDbContext db, IEmailSender sender, TimePr
 
     /// <summary>
     /// Notes explicitly shared with the user during (<paramref name="since"/>, <paramref name="until"/>], and notes
-    /// someone else changed during the window after sharing them. A null <paramref name="since"/> covers all time.
+    /// someone else changed (title or content) during the window after sharing them. A null <paramref name="since"/>
+    /// covers all time. Only a note's latest content edit is known, so a later edit by the user hides earlier ones.
     /// </summary>
     public async Task<NoteDigest> BuildAsync(
         long userId, string username, DigestFrequency frequency, DateTime? since, DateTime until, CancellationToken ct)
@@ -28,15 +29,15 @@ public sealed class DigestService(NotesDbContext db, IEmailSender sender, TimePr
             .Where(s => s.UserId == userId && s.SharedAt <= until)
             .Where(s => since == null
                 || s.SharedAt > since
-                || (s.Note!.UpdatedAt > since && s.Note.UpdatedAt > s.SharedAt && s.Note.UpdatedByUserId != userId))
+                || (s.Note!.ContentUpdatedAt > since && s.Note.ContentUpdatedAt > s.SharedAt && s.Note.ContentUpdatedByUserId != userId))
             .Select(s => new
             {
                 s.NoteId,
                 s.Note!.Title,
                 SharedBy = s.SharedByUserId ?? s.Note.OwnerId,
                 s.SharedAt,
-                s.Note.UpdatedByUserId,
-                s.Note.UpdatedAt,
+                UpdatedByUserId = s.Note.ContentUpdatedByUserId,
+                UpdatedAt = s.Note.ContentUpdatedAt,
             })
             .ToListAsync(ct);
 

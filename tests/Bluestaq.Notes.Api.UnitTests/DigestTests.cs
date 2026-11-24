@@ -176,6 +176,22 @@ public sealed class DigestTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Visibility_changes_are_not_reported_as_edits()
+    {
+        await ShareAsync(_plan.Id, _bob, _alice);
+        _db.Clock.Advance(TimeSpan.FromMinutes(1));
+        _db.CurrentUser.UserId = _alice;
+        await using var ctx = _db.CreateContext();
+        (await ctx.Notes.SingleAsync(n => n.Id == _plan.Id)).Visibility = NoteVisibility.Public;
+        await ctx.SaveChangesAsync();
+
+        var digest = await Service(ctx).BuildAsync(_bob, "bob", DigestFrequency.Daily, null, _db.Clock.GetUtcNow().UtcDateTime, default);
+
+        Assert.Empty(digest.Updated);
+        Assert.Equal(_plan.CreatedAt, Assert.Single(digest.NewlyShared).LastUpdatedAt);
+    }
+
+    [Fact]
     public async Task A_failed_send_is_retried_on_the_next_pass()
     {
         await ShareAsync(_plan.Id, _bob, _alice);

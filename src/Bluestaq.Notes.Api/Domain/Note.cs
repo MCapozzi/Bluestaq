@@ -13,4 +13,9 @@ public sealed class Note : IAuditable
     public DateTime CreatedAt { get; set; }
     public long UpdatedByUserId { get; set; }
     public DateTime UpdatedAt { get; set; }
+
+    /// <summary>Last change to the title or content (unlike <see cref="UpdatedAt"/>, which visibility changes also bump).</summary>
+    public long ContentUpdatedByUserId { get; set; }
+
+    public DateTime ContentUpdatedAt { get; set; }
 }
