@@ -1,3 +1,4 @@
+using Bluestaq.Notes.Api.Alerts;
 using System.ComponentModel.DataAnnotations;
 using Bluestaq.Notes.Api.Auth;
 using Bluestaq.Notes.Api.Contracts;
@@ -13,7 +14,7 @@ namespace Bluestaq.Notes.Api.Controllers;
 [ApiController]
 [Route("api/admin")]
 [Authorize(Policy = Roles.AdministratorPolicy)]
-public sealed class AdminController(NotesDbContext db) : ControllerBase
+public sealed class AdminController(NotesDbContext db, AlertConnections alertConnections) : ControllerBase
 {
     [HttpGet("users")]
     [ProducesResponseType<PagedResponse<UserResponse>>(StatusCodes.Status200OK)]
@@ -51,6 +52,7 @@ public sealed class AdminController(NotesDbContext db) : ControllerBase
 
         user.Role = request.Role!.Value;
         await db.SaveChangesAsync(ct);
+        alertConnections.SetAdministrator(user.Id, user.Role == UserRole.Administrator);
         return Ok(new UserResponse(user.Id, user.Username, user.CreatedAt, user.Role));
     }
 

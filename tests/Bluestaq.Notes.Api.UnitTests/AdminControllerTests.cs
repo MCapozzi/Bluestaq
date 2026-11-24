@@ -1,3 +1,4 @@
+using Bluestaq.Notes.Api.Alerts;
 using Bluestaq.Notes.Api.Contracts;
 using Bluestaq.Notes.Api.Controllers;
 using Bluestaq.Notes.Api.Data;
@@ -10,6 +11,7 @@ namespace Bluestaq.Notes.Api.UnitTests;
 public sealed class AdminControllerTests : IAsyncLifetime
 {
     private readonly TestDb _db = new();
+    private readonly AlertConnections _connections = new();
     private NotesDbContext _ctx = null!;
     private long _adminId;
     private long _bobId;
@@ -27,7 +29,7 @@ public sealed class AdminControllerTests : IAsyncLifetime
         _db.Dispose();
     }
 
-    private AdminController Controller() => new(_ctx)
+    private AdminController Controller() => new(_ctx, _connections)
     {
         ControllerContext = TestPrincipals.ControllerContext(TestPrincipals.Admin(_adminId)),
     };
@@ -46,8 +48,10 @@ public sealed class AdminControllerTests : IAsyncLifetime
     [Fact]
     public async Task SetRole_promotes_and_demotes_other_users()
     {
+        var socket = _connections.Add(_bobId, 1, new AlertTests.FakeSocket());
         var promoted = Body<UserResponse>(await Controller().SetRole(_bobId, new SetRoleRequest(UserRole.Administrator), default));
         Assert.Equal(UserRole.Administrator, promoted.Role);
+        Assert.Same(socket, Assert.Single(_connections.Administrators()));
         await using (var verify = _db.CreateContext())
         {
             Assert.Equal(UserRole.Administrator, verify.Users.Single(u => u.Id == _bobId).Role);
@@ -55,6 +59,8 @@ public sealed class AdminControllerTests : IAsyncLifetime
 
         var demoted = Body<UserResponse>(await Controller().SetRole(_bobId, new SetRoleRequest(UserRole.User), default));
         Assert.Equal(UserRole.User, demoted.Role);
+        Assert.False(socket.IsAdministrator);
+        Assert.Empty(_connections.Administrators());
     }
 
     [Fact]

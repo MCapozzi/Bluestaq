@@ -7,6 +7,9 @@ public sealed record AlertConnection(Guid Id, long UserId, long SessionId, WebSo
 {
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
+    /// <summary>Updated when an admin changes the user's role, so open sockets follow promotions and demotions.</summary>
+    public bool IsAdministrator { get; set; } = IsAdministrator;
+
     /// <summary>Sends one text message. WebSockets allow one send at a time, and both alert dispatch and admin alerts send.</summary>
     public async Task SendAsync(ReadOnlyMemory<byte> payload, CancellationToken ct)
     {
@@ -35,6 +38,14 @@ public sealed class AlertConnections
     }
 
     public void Remove(AlertConnection connection) => _connections.TryRemove(connection.Id, out _);
+
+    public void SetAdministrator(long userId, bool isAdministrator)
+    {
+        foreach (var connection in _connections.Values.Where(c => c.UserId == userId))
+        {
+            connection.IsAdministrator = isAdministrator;
+        }
+    }
 
     public IReadOnlyList<AlertConnection> Administrators() =>
         _connections.Values.Where(c => c.IsAdministrator && c.Socket.State == WebSocketState.Open).ToList();
