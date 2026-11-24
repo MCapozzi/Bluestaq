@@ -26,17 +26,44 @@ public sealed class AlertInterceptor(ICurrentUserAccessor currentUser, TimeProvi
         return result;
     }
 
-    /// <summary>Deleting a note removes its undelivered alerts in the same save; delivered rows stay to keep throttling pushes.</summary>
-    private static async Task DropPendingAlertsForDeletedNotesAsync(NotesDbContext db, bool sync, CancellationToken ct)
+    public override int SavedChanges(SaveChangesCompletedEventData eventData, int result)
     {
-        var deletedNoteIds = db.ChangeTracker.Entries<Note>().Where(e => e.State == EntityState.Deleted).Select(e => e.Entity.Id).ToList();
-        if (deletedNoteIds.Count == 0)
+        PendingAlertsOfDeletedNotes(eventData.Context)?.ExecuteDelete();
+        return result;
+    }
+
+    public override async ValueTask<int> SavedChangesAsync(
+        SaveChangesCompletedEventData eventData, int result, CancellationToken cancellationToken = default)
+    {
+        if (PendingAlertsOfDeletedNotes(eventData.Context) is { } pending)
         {
-            return;
+            await pending.ExecuteDeleteAsync(cancellationToken);
         }
 
-        var pendingQuery = db.NoteAlerts.Where(a => a.DeliveredAt == null && deletedNoteIds.Contains(a.NoteId));
-        db.NoteAlerts.RemoveRange(sync ? pendingQuery.ToList() : await pendingQuery.ToListAsync(ct));
+        return result;
+    }
+
+    public override void SaveChangesFailed(DbContextErrorEventData eventData) => _deletedNoteIds = null;
+
+    public override Task SaveChangesFailedAsync(DbContextErrorEventData eventData, CancellationToken cancellationToken = default)
+    {
+        _deletedNoteIds = null;
+        return Task.CompletedTask;
+    }
+
+    private List<long>? _deletedNoteIds;
+
+    /// <summary>
+    /// Once a note deletion is saved, its undelivered alerts are deleted. The delete re-checks <c>DeliveredAt</c> when it
+    /// runs, so an alert the dispatcher delivers meanwhile stays and keeps throttling pushes.
+    /// </summary>
+    private IQueryable<NoteAlert>? PendingAlertsOfDeletedNotes(DbContext? context)
+    {
+        var ids = _deletedNoteIds;
+        _deletedNoteIds = null;
+        return context is NotesDbContext db && ids is { Count: > 0 }
+            ? db.NoteAlerts.Where(a => a.DeliveredAt == null && ids.Contains(a.NoteId))
+            : null;
     }
 
     /// <summary>PUT marks every field modified, so compare values to skip resubmissions of identical text.</summary>
@@ -51,7 +78,7 @@ public sealed class AlertInterceptor(ICurrentUserAccessor currentUser, TimeProvi
         }
 
         db.ChangeTracker.DetectChanges();
-        await DropPendingAlertsForDeletedNotesAsync(db, sync, ct);
+        _deletedNoteIds = db.ChangeTracker.Entries<Note>().Where(e => e.State == EntityState.Deleted).Select(e => e.Entity.Id).ToList();
         if (currentUser.UserId is not { } actorId)
         {
             return;
