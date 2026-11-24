@@ -1,0 +1,48 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_DATABASE: notes
+      MYSQL_USER: notes
+      MYSQL_PASSWORD: notespw
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-unotes", "-pnotespw"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: .
+    restart: on-failure
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    environment:
+      ConnectionStrings__Notes: "Server=mysql;Port=3306;Database=notes;User=notes;Password=notespw;"
+      Database__MigrateOnStartup: "true"
+      Admin__BootstrapUsername: "admin"
+      Admin__BootstrapPassword: "admin-dev-password"
+      Digest__Smtp__Host: "mailpit"
+      Digest__Smtp__Port: "1025"
+      Digest__Smtp__Security: "None"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - admin-audit-logs:/var/log/bluestaq
+
+  # Catches digest emails (all sent to TEST@TEST.TEST); web UI on http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:v1.33
+    ports:
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  mysql-data:
+  admin-audit-logs:

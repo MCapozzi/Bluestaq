@@ -1,0 +1,74 @@
+# Deployment stack: the compiled API image plus MySQL.
+#   cp .env.example .env   # then set real secrets
+#   docker compose -f docker-compose.prod.yml up -d --build
+# Secrets come from the environment / .env (never committed). MySQL is only reachable on the internal network.
+name: bluestaq-notes
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-notes}
+      MYSQL_USER: ${MYSQL_USER:-notes}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u\"$$MYSQL_USER\" -p\"$$MYSQL_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  api:
+    image: ${API_IMAGE:-bluestaq-notes-api:latest}
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Notes: "Server=mysql;Port=3306;Database=${MYSQL_DATABASE:-notes};User=${MYSQL_USER:-notes};"
+      # Passed separately and applied with the provider's connection-string builder, so any characters are safe.
+      Database__Password: ${MYSQL_PASSWORD}
+      Database__MigrateOnStartup: ${MIGRATE_ON_STARTUP:-true}
+      Sessions__IdleTimeout: ${SESSION_IDLE_TIMEOUT:-08:00:00}
+      # Enable only behind a trusted reverse proxy / load balancer that sets X-Forwarded-For/-Proto
+      # (needed for correct per-client rate limiting and Secure cookies when TLS terminates at the proxy).
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: ${FORWARDED_HEADERS_ENABLED:-false}
+      # Created (or promoted) as an Administrator at startup. Leave the password empty once the account exists.
+      Admin__BootstrapUsername: ${ADMIN_BOOTSTRAP_USERNAME:-}
+      Admin__BootstrapPassword: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      AdminAudit__LogFilePath: /var/log/bluestaq/admin-audit-.log
+      # Digest emails (all addressed to TEST@TEST.TEST for this project). Not sent while the host is empty.
+      Digest__Smtp__Host: ${DIGEST_SMTP_HOST:-}
+      Digest__Smtp__Port: ${DIGEST_SMTP_PORT:-587}
+      Digest__Smtp__Security: ${DIGEST_SMTP_SECURITY:-StartTls}
+      Digest__Smtp__Username: ${DIGEST_SMTP_USERNAME:-}
+      Digest__Smtp__Password: ${DIGEST_SMTP_PASSWORD:-}
+      Digest__From: ${DIGEST_FROM:-notes@bluestaq.local}
+    ports:
+      - "${API_BIND_ADDRESS:-0.0.0.0}:${API_PORT:-8080}:8080"
+    networks:
+      - backend
+    volumes:
+      # External admin action log (JSON lines, rolled daily); ship it to your log store from this volume.
+      - admin-audit-logs:/var/log/bluestaq
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  backend:
+
+volumes:
+  mysql-data:
+  admin-audit-logs:
