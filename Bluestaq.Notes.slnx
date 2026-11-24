@@ -4,5 +4,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Bluestaq.Notes.Api.Tests/Bluestaq.Notes.Api.Tests.csproj" />
+    <Project Path="tests/Bluestaq.Notes.Api.UnitTests/Bluestaq.Notes.Api.UnitTests.csproj" />
   </Folder>
 </Solution>

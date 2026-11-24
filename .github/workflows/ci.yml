@@ -14,5 +14,7 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - run: dotnet build -c Release
+      # Unit tests with a line-coverage gate: fails the build below 70%.
+      - run: dotnet test tests/Bluestaq.Notes.Api.UnitTests -c Release --no-build /p:CollectCoverage=true
       # Integration tests start a MySQL container via Testcontainers (Docker is available on GitHub runners).
-      - run: dotnet test -c Release --no-build
+      - run: dotnet test tests/Bluestaq.Notes.Api.Tests -c Release --no-build

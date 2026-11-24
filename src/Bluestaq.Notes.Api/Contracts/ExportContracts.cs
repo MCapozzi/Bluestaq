@@ -16,7 +16,7 @@ public enum ExportFormat
 /// or the <see cref="From"/>/<see cref="To"/> creation-date range (inclusive, UTC).
 /// </summary>
 public sealed record NoteExportRequest(
-    [MaxLength(MaxExportNoteIds)] long[]? NoteIds = null,
+    long[]? NoteIds = null,
     long? UserId = null,
     DateTime? From = null,
     DateTime? To = null,
@@ -37,6 +37,10 @@ public sealed record NoteExportRequest(
         if (NoteIds is { Length: 0 })
         {
             yield return new ValidationResult("noteIds must contain at least one ID.", [nameof(NoteIds)]);
+        }
+        else if (NoteIds is { Length: > MaxExportNoteIds })
+        {
+            yield return new ValidationResult($"noteIds exceeds the maximum length of {MaxExportNoteIds}.", [nameof(NoteIds)]);
         }
 
         if (hasRange)

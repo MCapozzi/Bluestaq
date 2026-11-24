@@ -45,6 +45,27 @@ Content-Type: application/json
 DELETE {{host}}/api/notes/1
 Authorization: Bearer {{token}}
 
+### Export notes by ID
+POST {{host}}/api/notes/export
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "noteIds": [1, 2, 3] }
+
+### Export all of a user's notes (must be your own user ID)
+POST {{host}}/api/notes/export
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "userId": 1 }
+
+### Export notes created in a date range, as CSV
+POST {{host}}/api/notes/export
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "from": "2026-01-01T00:00:00Z", "to": "2026-12-31T23:59:59Z", "format": "csv" }
+
 ### Logout
 POST {{host}}/api/auth/logout
 Authorization: Bearer {{token}}

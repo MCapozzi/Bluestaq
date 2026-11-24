@@ -39,6 +39,8 @@ has ready-made requests for every endpoint.
 | `Database:MigrateOnStartup` | `false` | Apply pending migrations at startup |
 | `Sessions:IdleTimeout` | `08:00:00` | Session lifetime; slides forward on activity |
 | `Sessions:CookieName` | `notes_session` | Name of the session cookie |
+| `RateLimiting:Auth:PermitLimit` | `10` | Login/register requests allowed per client IP per window |
+| `RateLimiting:Auth:Window` | `00:01:00` | Rate-limit window; excess requests get 429 |
 
 Use environment variables in containers, e.g. `ConnectionStrings__Notes=...`.
 
@@ -57,9 +59,31 @@ All endpoints except `register`, `login` and `/health` require a valid session. 
 | POST | `/api/notes` | Create `{ title, content }` | 201 |
 | PUT | `/api/notes/{id}` | Replace `{ title, content }` | 200 |
 | DELETE | `/api/notes/{id}` | Delete a note | 204 |
+| POST | `/api/notes/export` | Bulk export own notes (see below) | 200 |
 
 Validation: username 3–50 chars of `[A-Za-z0-9_.-]` (case-insensitive, stored lowercase); password 8–128 chars;
 title 1–200 chars; content up to 100,000 chars.
+
+### Audit trail
+
+Every note carries `createdByUserId`, `createdAt`, `updatedByUserId` and `updatedAt` (UTC). They are stamped by an
+EF Core `SaveChangesInterceptor` (`AuditInterceptor`) from the authenticated user and the server clock on every insert
+and update, so clients can't set or forge them, and `created*` can never change after insert. All note responses
+include them, along with `ownerId`.
+
+### Bulk export
+
+`POST /api/notes/export` takes exactly one selector:
+
+| Body | Exports |
+| --- | --- |
+| `{ "noteIds": [1, 2, 3] }` | Those notes (up to 1,000 IDs). IDs that don't exist or aren't yours are listed in `notFoundIds`. |
+| `{ "userId": 42 }` | All notes owned by user 42. Must be your own ID, otherwise **403**. |
+| `{ "from": "2026-01-01T00:00:00Z", "to": "2026-01-31T23:59:59Z" }` | Your notes created in that range (inclusive; timestamps without an offset are UTC). |
+
+Add `"format": "csv"` to get a `text/csv` download (`notes-export-<timestamp>.csv`) instead of JSON
+`{ exportedAt, count, notes, notFoundIds }`. CSV cells starting with `= + - @` are prefixed with `'` to prevent
+spreadsheet formula injection. Supplying zero or more than one selector, or an incomplete/inverted range, returns 400.
 
 ### Example
 
@@ -84,6 +108,7 @@ curl -s localhost:8080/api/notes -H "Authorization: Bearer $TOKEN"
 - **Logout** deletes the session row, so the token stops working immediately.
 - Notes are always queried scoped to the caller's user id. Another user's note returns **404**, not 403, so note ids
   can't be probed.
+- `login` and `register` are rate limited per client IP to slow password guessing.
 
 ## Project layout
 
@@ -92,9 +117,11 @@ src/Bluestaq.Notes.Api
   Auth/          session service, authentication handler, options
   Controllers/   AuthController, NotesController
   Contracts/     request/response DTOs and validation limits
-  Data/          NotesDbContext and EF Core migrations
+  Data/          NotesDbContext, AuditInterceptor and EF Core migrations
   Domain/        User, Note, Session entities
-tests/Bluestaq.Notes.Api.Tests   integration tests (WebApplicationFactory + Testcontainers MySQL)
+  Export/        NoteExporter (query) and NoteCsvWriter
+tests/Bluestaq.Notes.Api.UnitTests  unit tests (in-memory SQLite, fake clock), with a 70% line-coverage gate
+tests/Bluestaq.Notes.Api.Tests      integration tests (WebApplicationFactory + Testcontainers MySQL)
 ```
 
 ## Tests
@@ -106,9 +133,17 @@ dotnet test
 Integration tests run the real API in-process against a throwaway MySQL container, so Docker must be running.
 Set `NOTES_TEST_MYSQL_IMAGE` to use a different MySQL image.
 
+Unit tests need no Docker. To enforce the line-coverage gate (fails below 70%; migrations and generated code excluded):
+
+```bash
+dotnet test tests/Bluestaq.Notes.Api.UnitTests /p:CollectCoverage=true
+```
+
 ## Possible next steps
 
 - Sharing/collaboration: a `note_shares` table (note, user, permission) and endpoints to grant/revoke access.
 - Optimistic concurrency (`ETag`/`If-Match`) for simultaneous edits.
-- Login rate limiting / lockout, and a background job to purge expired sessions.
+- Per-account lockout, and a background job to purge expired sessions.
+- An admin role that may export other users' notes.
+- TLS termination (reverse proxy or Kestrel certificates) for non-local deployments.
 - Search and tagging.
