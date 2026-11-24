@@ -2,6 +2,7 @@ using Bluestaq.Notes.Api.Admin;
 using Bluestaq.Notes.Api.Alerts;
 using Bluestaq.Notes.Api.Auth;
 using Bluestaq.Notes.Api.Data;
+using Bluestaq.Notes.Api.Digest;
 using Bluestaq.Notes.Api.Domain;
 using Bluestaq.Notes.Api.Export;
 using Bluestaq.Notes.Api.Import;
@@ -39,6 +40,10 @@ builder.Services.Configure<ExportOptions>(builder.Configuration.GetSection(Expor
 builder.Services.AddScoped<NoteExporter>();
 builder.Services.Configure<ImportOptions>(builder.Configuration.GetSection(ImportOptions.SectionName));
 builder.Services.AddScoped<NoteImporter>();
+builder.Services.Configure<DigestOptions>(builder.Configuration.GetSection(DigestOptions.SectionName));
+builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<DigestService>();
+builder.Services.AddHostedService<DigestDispatcher>();
 builder.Services.Configure<SessionAuthOptions>(builder.Configuration.GetSection(SessionAuthOptions.SectionName));
 builder.Services.AddScoped<SessionService>();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();

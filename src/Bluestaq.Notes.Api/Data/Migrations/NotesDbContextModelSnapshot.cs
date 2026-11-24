@@ -230,6 +230,12 @@ namespace Bluestaq.Notes.Api.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<int>("DigestFrequency")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DigestLastSentAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(255)

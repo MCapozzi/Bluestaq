@@ -46,6 +46,13 @@ services:
       Admin__BootstrapUsername: ${ADMIN_BOOTSTRAP_USERNAME:-}
       Admin__BootstrapPassword: ${ADMIN_BOOTSTRAP_PASSWORD:-}
       AdminAudit__LogFilePath: /var/log/bluestaq/admin-audit-.log
+      # Digest emails (all addressed to TEST@TEST.TEST for this project). Not sent while the host is empty.
+      Digest__Smtp__Host: ${DIGEST_SMTP_HOST:-}
+      Digest__Smtp__Port: ${DIGEST_SMTP_PORT:-587}
+      Digest__Smtp__Security: ${DIGEST_SMTP_SECURITY:-StartTls}
+      Digest__Smtp__Username: ${DIGEST_SMTP_USERNAME:-}
+      Digest__Smtp__Password: ${DIGEST_SMTP_PASSWORD:-}
+      Digest__From: ${DIGEST_FROM:-notes@bluestaq.local}
     ports:
       - "${API_BIND_ADDRESS:-0.0.0.0}:${API_PORT:-8080}:8080"
     networks:
