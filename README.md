@@ -24,137 +24,39 @@ authorized against a server-side session stored in the database.
 
 ## Major Features
 
-The three features below build on the core notes API. Each section covers the endpoints, behavior and limits.
+there are three features (besides core CRUD) that warranted additional time and consideration during implementation.,
 
 ### WebSocket alerts
 
-Users connected to `/ws/alerts` are told in real time when a note is shared with them or a note shared with them is
-edited. Each alert says who shared the note, its title and when it was last updated. Pushes are combined and sent at
-most once per 30 minutes per user.
-
-Connect to `/ws/alerts` with your session (the `notes_session` cookie, or `Authorization: Bearer <token>` for non-browser
-clients). The server pushes an alert when a note is **shared with you**, or when a note **shared with you is
-edited** (title or content). You are never alerted about your own changes.
-
-Alerts are stored in `note_alerts` as they happen and pushed **at most once per 30 minutes per user**: if nothing was
-pushed to you in the last 30 minutes, pending alerts go out within a few seconds; otherwise they are combined and sent
-when the 30 minutes are up. Alerts wait in the database while you're offline and are delivered when you connect.
-Alerts for notes you can no longer read are dropped, and deleting a note removes its pending alerts immediately. A cookie-authenticated handshake is rejected with 403 unless its
-`Origin` is the API's own or listed in `Alerts:AllowedOrigins` (behind a reverse proxy that rewrites `Host`, list the
-public origin there, e.g. `https://notes.example.com`). When your session ends (logout or expiry) the socket is closed
-with status `1008`.
-
-```json
-{
-  "type": "alerts",
-  "sentAt": "2026-11-24T22:30:00Z",
-  "alerts": [
-    {
-      "noteId": 42, "title": "Roadmap", "sharedBy": "alice", "updatedBy": "alice",
-      "lastUpdatedAt": "2026-11-24T22:28:13Z", "events": ["Shared", "Updated"], "eventCount": 3,
-      "firstOccurredAt": "2026-11-24T22:01:05Z", "lastOccurredAt": "2026-11-24T22:28:13Z"
-    }
-  ]
-}
-```
-
-`sharedBy` is whoever shared the note with you (the owner, or an administrator acting on it); `updatedBy` and
-`lastUpdatedAt` describe the note's latest edit. Each API instance pushes only to the sockets connected to it, and a
-push to any of a user's sockets counts as that user's push for the interval. With several API replicas, use sticky
-sessions so all of a user's sockets land on the same replica; otherwise a socket on another replica can miss a push.
-A Redis backplane would fix this; it is out of scope for this project but planned for a production release.
-
-Administrators' sockets also receive `registrationFailed` messages immediately, without throttling (see
-[Failed registrations](#failed-registrations)):
-
-```json
-{
-  "type": "registrationFailed", "occurredAt": "2026-11-24T23:10:00Z", "username": "carol",
-  "clientIp": "203.0.113.7", "consecutiveFailures": 1, "error": "Unable to connect to any of the specified MySQL hosts."
-}
-```
+WebSockets and push-style communication with the front end enables a live-communication and collaboration potential.
+This area could (and would) be expanded to also facilitate collaborative, live, note-taking. Given the potential 
+complexities of maintaining a live communication with limited resources within the scope of this assignment, I opted to
+not try and have multiple users work live on the same item, but still lay the groundwork with technology choices and 
+capability demonstrations. The alerting system serves to both inform users of information being shared with them, admins
+of potential issues with registration, etc.
 
 ### Export / Import
-
-Notes can be exported in bulk as JSON or CSV and imported again, on the same instance or a different one.
-
-#### Export
-
-`POST /api/notes/export` takes exactly one selector:
-
-| Body | Exports |
-| --- | --- |
-| `{ "noteIds": [1, 2, 3] }` | Those notes (up to 1,000 IDs). IDs that don't exist or you can't read are listed in `notFoundIds`. |
-| `{ "userId": 42 }` | Notes owned by user 42 that you can read (all of them if 42 is you). |
-| `{ "from": "2026-01-01T00:00:00Z", "to": "2026-01-31T23:59:59Z" }` | Notes you can read created in that range (inclusive; timestamps without an offset are UTC). |
-
-Add `"format": "csv"` to get a `text/csv` download (`notes-export-<timestamp>.csv`) instead of JSON
-`{ exportedAt, count, notes, notFoundIds }`. CSV cells starting with `= + - @` (or `'`) are prefixed with `'` to prevent
-spreadsheet formula injection. Supplying zero or more than one selector, or an incomplete/inverted range, returns 400. A selection matching more than
-`Export:MaxNotes` notes (default 10,000) is rejected with 400 rather than buffered.
-
-#### Import
-
-`POST /api/notes/import` takes a file produced by `POST /api/notes/export`, from this instance or another one:
-
-- **JSON** (`Content-Type: application/json`): the export document as-is (`{ exportedAt, count, notes, notFoundIds }`).
-  Only `notes` is read, so `{ "notes": [{ "title": "...", "content": "...", "visibility": "public" }] }` works too.
-- **CSV** (`Content-Type: text/csv`): the CSV export. Columns are matched by header name; `Title` and `Content` are
-  required, `Id` and `Visibility` optional, others ignored. The export's `'` formula guard is removed again.
-
-What is imported:
-
-- Each note becomes a **new note owned by you**, with a new ID, so IDs from another instance can't clash.
-- `title`, `content` and `visibility` are kept (`private` if missing). Shares aren't part of the export, so imported
-  notes have none.
-- `ownerId` and the audit fields in the file are ignored, because those user IDs belong to the source instance. The
-  audit fields are stamped as you creating the notes at import time.
-- The response (201) is `{ importedAt, count, notes: [{ sourceId, note }] }`, where `sourceId` is the note's `id` in
-  the file, so you can map old IDs to new ones.
-
-An import is all-or-nothing: if any note is invalid (same limits as creating a note), or the file has more than
-`Import:MaxNotes` notes (default 10,000), or the CSV is malformed, nothing is saved and you get 400 with errors keyed
-by position, e.g. `Notes[3].Title`.
-
-Moving notes between instances:
-
-```bash
-curl -s -X POST https://old.example/api/notes/export -H "Authorization: Bearer $OLD" \
-  -H 'Content-Type: application/json' -d "{\"userId\": $MY_OLD_ID}" > notes.json
-curl -s -X POST https://new.example/api/notes/import -H "Authorization: Bearer $NEW" \
-  -H 'Content-Type: application/json' --data-binary @notes.json
-```
+Exporting information allows for cold-storage backups to be taken from the system, or for audits to be quickly performed
+on the data within the system. This also allows for growth-potential via a synchronization protocol as the application's
+user base grows. Short term export/import allows for disparate teams to maintain local (potentially network isolated) 
+instances of the application to run, but still move data in any direction should it need to be shared. Ideally, a more 
+complex system using Eventual Consistency (EC) could be adopted in place of the CSV export, along with converting to a 
+JSON styled format. There are benefits and drawbacks to both decisions, and would be more warranted for consideration as 
+the scope of the system grows, or requires integration with other microservices. Possible technologies for this include 
+RabbitMQ, or AMQP.
 
 ### Email digests
+Given the focus of this is for small teams to collaborate and share, the ability for offline catch up enables any team 
+members who are offline for prolonged periods to still have a summary view of information in their inbox. Additionally, 
+it serves as a means of providing Management/Supervisory persons a means of retaining visibility without needing to 
+actively use the application beyond setting their account up and effectively walking away. 
 
-Users who opt in get one email a day, at midnight Eastern, listing the previous day's shared-note and/or public-note
-activity. Nothing is sent on days with no activity.
+## What I'd do Differently
+I would absolutely love to add searchability and data tagging using a big-data system like Elasticsearch or Splunk - both would provide administrators and superusers the ability to quickly find relevant information rather than having to rely on "Is it in this note?" with the use of `ctrl` + `f` as the main search tool. Given the scope of note-taking for small teams, that would be a next-big-feature prior to Minimum Viable Product release to market, and I would personally integrate that capability through the front end, rather than entirely reliant on server-side communication as a bottleneck for search.
 
-Users are **opted out** by default. `PUT /api/digest { "sharedNotes": true, "publicNotes": true }` opts in to either
-or both sections; set both to `false` to opt out. Once a day, at **midnight Eastern** (`America/New_York`, so it
-follows daylight saving), each opted-in user is emailed what happened during the day that just ended (midnight to
-midnight):
+As a personal passion, limited image recognition for notetaking and screen-reader compatibility would be interesting. This would likely require an additional service dedicated to the task and an LLM integrated. This would also open the door to AI summaries of note(s) for someone new joining the team needing to be rapidly brought up to speed on the collective knoweldgebase.
 
-- `sharedNotes`:
-  - **Shared with you**: notes shared with you that day.
-  - **Changed since they were shared with you**: shared notes whose title or content someone else edited that day.
-- `publicNotes`:
-  - **New public notes**: other users' notes that became public that day.
-  - **Changed public notes**: other users' public notes whose title or content someone else edited that day.
-
-Visibility changes don't count as edits, your own edits are left out, and deleted notes never appear. A public note that is also shared with you is
-listed only under the shared sections when you get them. Each entry has the note's title and ID, who shared or owns it,
-and when and by whom it was last edited; only a note's latest edit is known.
-
-**If an opted-in user has nothing new, no email is sent.** Digests only go out within `Digest:SendWindow` (1 hour)
-after midnight; a day missed because the service was down longer than that is skipped, not sent late.
-
-**For this project every digest is sent to `TEST@TEST.TEST`**, not to the user (users have no email address); the
-subject and greeting name the user it is for. Mail goes over SMTP (`Digest:Smtp:*`); `docker compose up` includes
-[Mailpit](https://mailpit.axllent.org/), which catches the mail and shows it at http://localhost:8025. Each user is
-claimed with a conditional update before sending, so several API replicas don't send the same digest twice; a failed
-send is retried on the next poll within the send window. Known gap: if the SMTP connection drops after the server has
-accepted a message, the send counts as failed and the retry can deliver a duplicate (marked TODO in `SmtpEmailSender`).
+It would be beneficial to take more time structuring Notes more robustly, to allow support for different note-taking formats and enabling more robust utility out of the raw capability of putting words on 'paper'.
 
 ## Running
 
